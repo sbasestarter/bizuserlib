@@ -3,15 +3,13 @@ package userpass
 import (
 	"context"
 
-	"github.com/sbasestarter/bizuserlib/authenticator"
 	"github.com/sbasestarter/bizuserlib/bizuserinters"
 	"github.com/sgostarter/libeasygo/crypt"
 )
 
 type Authenticator interface {
-	bizuserinters.Authenticator
-	VerifyUserPass(ctx context.Context, bizID string, userName, password string) bizuserinters.Status
-	RegisterUserPass(ctx context.Context, bizID string, userName, password string) bizuserinters.Status
+	Register(ctx context.Context, bizID string, userName, password string) bizuserinters.Status
+	Login(ctx context.Context, bizID string, userName, password string) bizuserinters.Status
 	VerifyPassword(ctx context.Context, bizID string, password string) bizuserinters.Status
 	ChangePassword(ctx context.Context, bizID string, password string) bizuserinters.Status
 }
@@ -22,23 +20,52 @@ func NewAuthenticator(model Model, passwordSecret string) Authenticator {
 	}
 
 	return &authenticatorImpl{
-		Authenticator: authenticator.Authenticator{
-			Model:         model,
-			Authenticator: bizuserinters.AuthenticatorUserPass,
-		},
 		model:          model,
 		passwordSecret: passwordSecret,
 	}
 }
 
 type authenticatorImpl struct {
-	authenticator.Authenticator
-
 	model          Model
 	passwordSecret string
 }
 
-func (impl *authenticatorImpl) VerifyUserPass(ctx context.Context, bizID string, userName, password string) (status bizuserinters.Status) {
+func (impl *authenticatorImpl) Register(ctx context.Context, bizID string, userName, password string) (status bizuserinters.Status) {
+	status = impl.model.MustCurrentEvent(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Event:         bizuserinters.SetupEvent,
+	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	if userName == "" || password == "" {
+		status.Code = bizuserinters.StatusCodeInvalidArgsError
+
+		return
+	}
+
+	_, _, status = impl.model.GetUserPassInfoByUserName(ctx, bizID, userName)
+	if status.Code == bizuserinters.StatusCodeOk {
+		status.Code = bizuserinters.StatusCodeDupError
+
+		return
+	}
+
+	status = impl.model.SetSetupCompleted(ctx, bizID, userName, impl.passEncrypt(password))
+
+	return
+}
+
+func (impl *authenticatorImpl) Login(ctx context.Context, bizID string, userName, password string) (status bizuserinters.Status) {
+	status = impl.model.MustCurrentEvent(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Event:         bizuserinters.VerifyEvent,
+	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	if userName == "" || password == "" {
 		status.Code = bizuserinters.StatusCodeInvalidArgsError
 
@@ -56,34 +83,20 @@ func (impl *authenticatorImpl) VerifyUserPass(ctx context.Context, bizID string,
 		return
 	}
 
-	status = impl.model.SetVerifiedUserInfoAndMarkVerifyEventCompleted(ctx, bizID, userID, userName)
-	if status.Code != bizuserinters.StatusCodeOk {
-		return
-	}
-
-	return
-}
-
-func (impl *authenticatorImpl) VerifyCheck(ctx context.Context, bizID string) (status bizuserinters.Status) {
-	return impl.model.CheckVerifyEventCompleted(ctx, bizID)
-}
-
-func (impl *authenticatorImpl) RegisterUserPass(ctx context.Context, bizID string, userName, password string) (status bizuserinters.Status) {
-	if userName == "" || password == "" {
-		status.Code = bizuserinters.StatusCodeInvalidArgsError
-
-		return
-	}
-
-	status = impl.model.AddUserAndMarkRegisterEventCompleted(ctx, bizID, userName, impl.passEncrypt(password))
-	if status.Code != bizuserinters.StatusCodeOk {
-		return
-	}
+	status = impl.model.SetLoginCompleted(ctx, bizID, userID, userName)
 
 	return
 }
 
 func (impl *authenticatorImpl) VerifyPassword(ctx context.Context, bizID string, password string) (status bizuserinters.Status) {
+	status = impl.model.MustCurrentEvent(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
+		Event:         bizuserinters.VerifyEvent,
+	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	_, _, dbPassword, status := impl.model.GetUserPassInfo(ctx, bizID)
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
@@ -95,12 +108,20 @@ func (impl *authenticatorImpl) VerifyPassword(ctx context.Context, bizID string,
 		return
 	}
 
-	status = impl.model.MarkVerifyEventCompleted(ctx, bizID)
+	status = impl.model.SetVerifyPasswordCompleted(ctx, bizID)
 
 	return
 }
 
 func (impl *authenticatorImpl) ChangePassword(ctx context.Context, bizID string, newPassword string) (status bizuserinters.Status) {
+	status = impl.model.MustCurrentEvent(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
+		Event:         bizuserinters.SetupEvent,
+	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	if newPassword == "" {
 		status.Code = bizuserinters.StatusCodeInvalidArgsError
 
@@ -118,13 +139,9 @@ func (impl *authenticatorImpl) ChangePassword(ctx context.Context, bizID string,
 		return
 	}
 
-	status = impl.model.SetNewPasswordAndMarkChangeEventCompleted(ctx, bizID, impl.passEncrypt(newPassword))
+	status = impl.model.SetChangePasswordCompleted(ctx, bizID, impl.passEncrypt(newPassword))
 
 	return
-}
-
-func (impl *authenticatorImpl) RegisterCheck(ctx context.Context, bizID string) (status bizuserinters.Status) {
-	return impl.model.CheckRegisterEventCompleted(ctx, bizID)
 }
 
 func (impl *authenticatorImpl) passEncrypt(content string) string {

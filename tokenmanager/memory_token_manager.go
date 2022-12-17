@@ -8,7 +8,7 @@ import (
 	"github.com/sbasestarter/bizuserlib/bizuserinters"
 )
 
-func NewMemoryTokenManager() bizuserinters.TokenManager {
+func NewMemoryTokenManager() bizuserinters.TokenManagerAll {
 	return &tokenManagerImpl{
 		m: make(map[string]*TokenData),
 	}
@@ -20,11 +20,58 @@ type TokenData struct {
 	UserID                      uint64
 	UserName                    string
 	WorkData                    map[string][]byte
+	CurrentEvents               []bizuserinters.AuthenticatorEvent
 }
 
 type tokenManagerImpl struct {
 	lock sync.Mutex
 	m    map[string]*TokenData
+}
+
+func (impl *tokenManagerImpl) SetCurrentEvents(ctx context.Context, bizID string, es []bizuserinters.AuthenticatorEvent) bizuserinters.Status {
+	impl.lock.Lock()
+	defer impl.lock.Unlock()
+
+	td, ok := impl.m[bizID]
+	if !ok {
+		return bizuserinters.MakeStatusByCode(bizuserinters.StatusCodeNoDataError)
+	}
+
+	td.CurrentEvents = es
+
+	return bizuserinters.MakeSuccessStatus()
+}
+
+func (impl *tokenManagerImpl) ClearCurrentEvents(ctx context.Context, bizID string) bizuserinters.Status {
+	impl.lock.Lock()
+	defer impl.lock.Unlock()
+
+	td, ok := impl.m[bizID]
+	if !ok {
+		return bizuserinters.MakeStatusByCode(bizuserinters.StatusCodeNoDataError)
+	}
+
+	td.CurrentEvents = nil
+
+	return bizuserinters.MakeSuccessStatus()
+}
+
+func (impl *tokenManagerImpl) GetCurrentEvents(ctx context.Context, bizID string) (es []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+	impl.lock.Lock()
+	defer impl.lock.Unlock()
+
+	td, ok := impl.m[bizID]
+	if !ok {
+		status = bizuserinters.MakeStatusByCode(bizuserinters.StatusCodeNoDataError)
+
+		return
+	}
+
+	es = td.CurrentEvents
+
+	status = bizuserinters.MakeSuccessStatus()
+
+	return
 }
 
 func (impl *tokenManagerImpl) CreateToken(ctx context.Context) (bizID string, status bizuserinters.Status) {

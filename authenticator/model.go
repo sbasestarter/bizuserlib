@@ -7,6 +7,6 @@ import (
 )
 
 type Model interface {
-	CheckVerifyEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status)
-	CheckRegisterEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status)
+	CheckEventCompleted(ctx context.Context, bizID string, e bizuserinters.AuthenticatorEvent) (status bizuserinters.Status)
+	MustCurrentEvent(ctx context.Context, bizID string, e bizuserinters.AuthenticatorEvent) (status bizuserinters.Status)
 }

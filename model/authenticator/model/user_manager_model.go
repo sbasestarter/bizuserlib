@@ -56,10 +56,8 @@ func (impl *userManagerModel) Update(ctx context.Context, userID uint64, authent
 	return
 }
 
-func (impl *userManagerModel) Delete(ctx context.Context, authenticatorData map[bizuserinters.AuthenticatorIdentity]map[string]interface{}, userIdentity *bizuserinters.UserIdentity) (status bizuserinters.Status) {
-	userInfo := impl.buildUserInfoFromAuthenticatorData(authenticatorData)
-
-	status = impl.m.UpdateUser(ctx, userInfo)
+func (impl *userManagerModel) Delete(ctx context.Context, userID uint64, fields uint64, userIdentity *bizuserinters.UserIdentity) (status bizuserinters.Status) {
+	status = impl.m.Delete(ctx, userID, fields)
 
 	return
 }
@@ -113,6 +111,11 @@ func (impl *userManagerModel) buildUserInfoFromAuthenticatorData(authenticatorDa
 		case bizuserinters.AuthenticatorEmail:
 		case bizuserinters.AuthenticatorGoogle2FA:
 			userInfo.Google2FASecretKey = cast.ToString(m[google2FASecretKey])
+		case bizuserinters.AuthenticatorAdminFlag:
+			f := bizuserinters.AdminFlag{}
+			f.UserID = cast.ToUint64(m[adminSetFlagUserID])
+			f.Flag = cast.ToBool(m[adminSetFlagFlag])
+			userInfo.AdminFlags = append(userInfo.AdminFlags, f)
 		}
 	}
 

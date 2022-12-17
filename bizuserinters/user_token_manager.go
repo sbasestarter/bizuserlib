@@ -8,6 +8,7 @@ import (
 type UserTokenInfo struct {
 	ID       uint64
 	UserName string
+	StartAt  time.Time
 	Age      time.Duration
 }
 

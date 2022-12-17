@@ -14,12 +14,16 @@ func NewAnonymousModel(tokenManagerModel authenticator.TokenManagerModel) anonym
 	}
 
 	return &anonymousModelImpl{
+		Base: Base{
+			TokenManager: tokenManagerModel,
+		},
 		tokenManagerModel:     tokenManagerModel,
 		authenticatorIdentity: bizuserinters.AuthenticatorAnonymous,
 	}
 }
 
 type anonymousModelImpl struct {
+	Base
 	tokenManagerModel     authenticator.TokenManagerModel
 	authenticatorIdentity bizuserinters.AuthenticatorIdentity
 }
@@ -34,7 +38,7 @@ func (impl *anonymousModelImpl) CheckVerifyEventCompleted(ctx context.Context, b
 func (impl *anonymousModelImpl) CheckRegisterEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
 	return impl.tokenManagerModel.CheckEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
 		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 }
 
@@ -56,7 +60,7 @@ func (impl *anonymousModelImpl) SetAnonymousUserInfoAndMarkEventCompleted(ctx co
 
 	status = impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
 		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	if status.Code != bizuserinters.StatusCodeOk {

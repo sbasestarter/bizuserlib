@@ -18,6 +18,8 @@ const (
 	StatusCodeLogicError
 	StatusCodeDupError
 	StatusCodeVerifyError
+	StatusCodeBadDataError
+	StatusCodePermissionError
 )
 
 type Status struct {

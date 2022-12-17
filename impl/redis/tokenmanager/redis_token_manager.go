@@ -3,6 +3,7 @@ package tokenmanager
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -19,9 +20,10 @@ const (
 	authenticationDataKeyPrefix          = "ad:"
 	currentUserInfoSubKey                = "cu"
 	workDataSubKeyPrefix                 = "wd:"
+	currentEventsSubKey                  = "ce"
 )
 
-func NewRedisTokenManager(redisCli *redis.Client, prefixKey string, logger l.Wrapper) bizuserinters.TokenManager {
+func NewRedisTokenManager(redisCli *redis.Client, prefixKey string, logger l.Wrapper) bizuserinters.TokenManagerAll {
 	if logger == nil {
 		logger = l.NewNopLoggerWrapper()
 	}
@@ -43,6 +45,69 @@ type tokenManagerImpl struct {
 	redisCli  *redis.Client
 	prefixKey string
 	logger    l.Wrapper
+}
+
+func (impl *tokenManagerImpl) GetCurrentEvents(ctx context.Context, bizID string) (es []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+	d, err := impl.redisCli.HGet(ctx, impl.tokenKey(bizID), currentEventsSubKey).Bytes()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			status.Code = bizuserinters.StatusCodeNoDataError
+		} else {
+			status = bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
+		}
+
+		return
+	}
+
+	if len(d) == 0 {
+		status.Code = bizuserinters.StatusCodeNoDataError
+
+		return
+	}
+
+	err = json.Unmarshal(d, &es)
+	if err != nil {
+		status = bizuserinters.MakeStatusByError(bizuserinters.StatusCodeBadDataError, err)
+
+		return
+	}
+
+	status = bizuserinters.MakeSuccessStatus()
+
+	return
+}
+
+func (impl *tokenManagerImpl) SetCurrentEvents(ctx context.Context, bizID string, es []bizuserinters.AuthenticatorEvent) bizuserinters.Status {
+	d, err := json.Marshal(es)
+	if err != nil {
+		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInvalidArgsError, err)
+	}
+
+	redisKey := impl.tokenKey(bizID)
+
+	n, err := impl.redisCli.Exists(ctx, redisKey).Result()
+	if err != nil {
+		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
+	}
+
+	if n <= 0 {
+		return bizuserinters.MakeStatusByCode(bizuserinters.StatusCodeNoDataError)
+	}
+
+	err = impl.redisCli.HSet(ctx, redisKey, currentEventsSubKey, d).Err()
+	if err != nil {
+		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
+	}
+
+	return bizuserinters.MakeSuccessStatus()
+}
+
+func (impl *tokenManagerImpl) ClearCurrentEvents(ctx context.Context, bizID string) bizuserinters.Status {
+	if err := impl.redisCli.HDel(ctx, impl.tokenKey(bizID), currentEventsSubKey).Err(); err != nil {
+		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
+	}
+
+	return bizuserinters.MakeSuccessStatus()
 }
 
 func (impl *tokenManagerImpl) SetWorkData(ctx context.Context, bizID string, key string, d []byte) bizuserinters.Status {
@@ -291,9 +356,13 @@ func (impl *tokenManagerImpl) parseCompletedAuthenticatorEventSubKey(s string) (
 
 	switch ps[0] {
 	case "0":
-		e.Event = bizuserinters.RegisterEvent
+		e.Event = bizuserinters.SetupEvent
 	case "1":
 		e.Event = bizuserinters.VerifyEvent
+	case "2":
+		e.Event = bizuserinters.ChangeEvent
+	case "3":
+		e.Event = bizuserinters.DeleteEvent
 	default:
 		return
 	}
@@ -325,7 +394,7 @@ func (impl *tokenManagerImpl) parseAuthenticatorDataSubKey(s string) (e bizuseri
 
 	switch ps[0] {
 	case "0":
-		e.Event = bizuserinters.RegisterEvent
+		e.Event = bizuserinters.SetupEvent
 	case "1":
 		e.Event = bizuserinters.VerifyEvent
 	default:

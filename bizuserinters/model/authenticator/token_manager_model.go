@@ -13,4 +13,7 @@ type TokenManagerModel interface {
 
 	SetCurrentUserInfo(ctx context.Context, bizID string, ui *bizuserinters.UserIdentity) (status bizuserinters.Status)
 	GetCurrentUserInfo(ctx context.Context, bizID string) (ui *bizuserinters.UserIdentity, status bizuserinters.Status)
+
+	GetCurrentEvents(ctx context.Context, bizID string) (es []bizuserinters.AuthenticatorEvent, status bizuserinters.Status)
+	GetAllCompletedAuthenticatorEvents(ctx context.Context, bizID string) (es []bizuserinters.AuthenticatorEvent, status bizuserinters.Status)
 }

@@ -29,32 +29,20 @@ func NewGoogle2FAModel(dbModel google2fainters.DBModel, tokenManagerModel authen
 	}
 
 	return &google2FAModelImpl{
-		dbModel:               dbModel,
-		tokenManagerModel:     tokenManagerModel,
-		cacheModel:            cacheModel,
-		authenticatorIdentity: bizuserinters.AuthenticatorGoogle2FA,
+		Base: Base{
+			TokenManager: tokenManagerModel,
+		},
+		dbModel:           dbModel,
+		tokenManagerModel: tokenManagerModel,
+		cacheModel:        cacheModel,
 	}
 }
 
 type google2FAModelImpl struct {
-	dbModel               google2fainters.DBModel
-	tokenManagerModel     authenticator.TokenManagerModel
-	cacheModel            authenticator.CacheModel
-	authenticatorIdentity bizuserinters.AuthenticatorIdentity
-}
-
-func (impl *google2FAModelImpl) CheckVerifyEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
-	return impl.tokenManagerModel.CheckEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.VerifyEvent,
-	})
-}
-
-func (impl *google2FAModelImpl) CheckRegisterEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
-	return impl.tokenManagerModel.CheckEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
-	})
+	Base
+	dbModel           google2fainters.DBModel
+	tokenManagerModel authenticator.TokenManagerModel
+	cacheModel        authenticator.CacheModel
 }
 
 func (impl *google2FAModelImpl) GetGoogle2FASecretKey(ctx context.Context, bizID string) (secretKey string, status bizuserinters.Status) {
@@ -86,10 +74,10 @@ func (impl *google2FAModelImpl) GetCachedGoogle2FASecretKey(ctx context.Context,
 	return
 }
 
-func (impl *google2FAModelImpl) SetGoogle2FASecretKeyAndMarkRegisterEventCompleted(ctx context.Context, bizID string, secretKey string) (status bizuserinters.Status) {
+func (impl *google2FAModelImpl) SetSetupGoogle2FACompleted(ctx context.Context, bizID string, secretKey string) (status bizuserinters.Status) {
 	status = impl.tokenManagerModel.SetAuthenticatorData(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+		Event:         bizuserinters.SetupEvent,
 	}, map[string]interface{}{
 		google2FASecretKey: secretKey,
 	})
@@ -98,16 +86,16 @@ func (impl *google2FAModelImpl) SetGoogle2FASecretKeyAndMarkRegisterEventComplet
 	}
 
 	status = impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	return
 }
 
-func (impl *google2FAModelImpl) MarkVerifyEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
+func (impl *google2FAModelImpl) SetVerifyGoogle2FACompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
 	return impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
 		Event:         bizuserinters.VerifyEvent,
 	})
 }

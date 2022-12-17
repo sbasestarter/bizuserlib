@@ -7,7 +7,6 @@ import (
 	"github.com/godruoyi/go-snowflake"
 	"github.com/sbasestarter/bizuserlib/bizuserinters"
 	"github.com/sbasestarter/bizuserlib/bizuserinters/model/authenticator"
-	"github.com/sbasestarter/bizuserlib/bizuserinters/model/authenticator/usermanager"
 )
 
 func NewMemoryDBModel(tokenManager bizuserinters.TokenManager) authenticator.DBModel {
@@ -26,6 +25,7 @@ type userData struct {
 	userName        string
 	password        string
 	google2faSecret string
+	adminFlag       bool
 }
 
 type memoryDBModelImpl struct {
@@ -34,6 +34,35 @@ type memoryDBModelImpl struct {
 	lock         sync.Mutex
 	users        map[uint64]*userData
 	name2UserIDs map[string]uint64
+}
+
+func (impl *memoryDBModelImpl) IsAdmin(ctx context.Context, bizID string) (adminFlag bool, status bizuserinters.Status) {
+	ui, status := impl.tokenManager.GetCurrentUserInfo(ctx, bizID)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	if ui.ID == 0 {
+		status.Code = bizuserinters.StatusCodeNoDataError
+
+		return
+	}
+
+	impl.lock.Lock()
+	defer impl.lock.Unlock()
+
+	u, ok := impl.users[ui.ID]
+	if !ok {
+		status.Code = bizuserinters.StatusCodeNoDataError
+
+		return
+	}
+
+	adminFlag = u.adminFlag
+
+	status.Code = bizuserinters.StatusCodeOk
+
+	return
 }
 
 func (impl *memoryDBModelImpl) GetUserPassInfo(ctx context.Context, bizID string) (userID uint64, userName, password string, status bizuserinters.Status) {
@@ -76,6 +105,7 @@ func (impl *memoryDBModelImpl) ListUsers(ctx context.Context) (users []*bizuseri
 			ID:           u,
 			UserName:     data.userName,
 			HasGoogle2FA: len(data.google2faSecret) > 0,
+			Admin:        data.adminFlag,
 		})
 	}
 
@@ -141,7 +171,7 @@ func (impl *memoryDBModelImpl) Delete(ctx context.Context, userID uint64, fields
 		return
 	}
 
-	if fields&usermanager.DeleteFieldUser == usermanager.DeleteFieldUser {
+	if fields&bizuserinters.DeleteFieldUser == bizuserinters.DeleteFieldUser {
 		delete(impl.users, userID)
 		delete(impl.name2UserIDs, dbUser.userName)
 
@@ -150,7 +180,7 @@ func (impl *memoryDBModelImpl) Delete(ctx context.Context, userID uint64, fields
 		return
 	}
 
-	if fields&usermanager.DeleteFieldGoogle2FA == usermanager.DeleteFieldGoogle2FA {
+	if fields&bizuserinters.DeleteFieldGoogle2FA == bizuserinters.DeleteFieldGoogle2FA {
 		dbUser.google2faSecret = ""
 
 		status.Code = bizuserinters.StatusCodeOk
@@ -201,6 +231,16 @@ func (impl *memoryDBModelImpl) UpdateUser(ctx context.Context, userInfo *bizuser
 		dbUser.google2faSecret = userInfo.Google2FASecretKey
 	}
 
+	for _, flag := range userInfo.AdminFlags {
+		if flag.UserID == 0 {
+			continue
+		}
+
+		if _, exists := impl.users[flag.UserID]; exists {
+			impl.users[flag.UserID].adminFlag = flag.Flag
+		}
+	}
+
 	status.Code = bizuserinters.StatusCodeOk
 
 	return
@@ -229,6 +269,20 @@ func (impl *memoryDBModelImpl) AddUser(ctx context.Context, userInfo *bizuserint
 		google2faSecret: userInfo.Google2FASecretKey,
 	}
 	impl.name2UserIDs[userInfo.UserName] = userInfo.ID
+
+	if len(impl.users) == 1 {
+		impl.users[userInfo.ID].adminFlag = true
+	}
+
+	for _, flag := range userInfo.AdminFlags {
+		if flag.UserID == 0 {
+			continue
+		}
+
+		if _, exists := impl.users[flag.UserID]; exists {
+			impl.users[flag.UserID].adminFlag = flag.Flag
+		}
+	}
 
 	status.Code = bizuserinters.StatusCodeOk
 

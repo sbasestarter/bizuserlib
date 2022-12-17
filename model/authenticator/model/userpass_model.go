@@ -21,16 +21,22 @@ func NewUserPassModel(dbModel userpassmodel.DBModel, tokenManagerModel authentic
 	}
 
 	return &userPassModelImpl{
-		dbModel:               dbModel,
-		tokenManagerModel:     tokenManagerModel,
-		authenticatorIdentity: bizuserinters.AuthenticatorUserPass,
+		Base: Base{
+			TokenManager: tokenManagerModel,
+		},
+		dbModel:           dbModel,
+		tokenManagerModel: tokenManagerModel,
 	}
 }
 
 type userPassModelImpl struct {
-	dbModel               userpassmodel.DBModel
-	tokenManagerModel     authenticator.TokenManagerModel
-	authenticatorIdentity bizuserinters.AuthenticatorIdentity
+	Base
+	dbModel           userpassmodel.DBModel
+	tokenManagerModel authenticator.TokenManagerModel
+}
+
+func (impl *userPassModelImpl) GetUserPassInfoByUserName(ctx context.Context, bizID string, userName string) (userID uint64, password string, status bizuserinters.Status) {
+	return impl.dbModel.GetUserPassInfoByUserName(ctx, bizID, userName)
 }
 
 func (impl *userPassModelImpl) GetUserPassInfo(ctx context.Context, bizID string) (userID uint64, userName, password string, status bizuserinters.Status) {
@@ -39,18 +45,12 @@ func (impl *userPassModelImpl) GetUserPassInfo(ctx context.Context, bizID string
 	return
 }
 
-func (impl *userPassModelImpl) MarkVerifyEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
-	return impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.VerifyEvent,
-	})
-}
-
-func (impl *userPassModelImpl) SetNewPasswordAndMarkChangeEventCompleted(ctx context.Context, bizID string, password string) (status bizuserinters.Status) {
+func (impl *userPassModelImpl) SetSetupCompleted(ctx context.Context, bizID string, userName string, password string) (status bizuserinters.Status) {
 	status = impl.tokenManagerModel.SetAuthenticatorData(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
+		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Event:         bizuserinters.SetupEvent,
 	}, map[string]interface{}{
+		userPassUsername: userName,
 		userPassPassword: password,
 	})
 	if status.Code != bizuserinters.StatusCodeOk {
@@ -58,34 +58,25 @@ func (impl *userPassModelImpl) SetNewPasswordAndMarkChangeEventCompleted(ctx con
 	}
 
 	status = impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
+		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Event:         bizuserinters.SetupEvent,
+	})
+
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	status = impl.tokenManagerModel.SetCurrentUserInfo(ctx, bizID, &bizuserinters.UserIdentity{
+		ID:       0,
+		UserName: userName,
 	})
 
 	return
 }
 
-func (impl *userPassModelImpl) GetUserPassInfoByUserName(ctx context.Context, bizID string, userName string) (userID uint64, password string, status bizuserinters.Status) {
-	return impl.dbModel.GetUserPassInfoByUserName(ctx, bizID, userName)
-}
-
-func (impl *userPassModelImpl) CheckVerifyEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
-	return impl.tokenManagerModel.CheckEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.VerifyEvent,
-	})
-}
-
-func (impl *userPassModelImpl) CheckRegisterEventCompleted(ctx context.Context, bizID string) (status bizuserinters.Status) {
-	return impl.tokenManagerModel.CheckEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
-	})
-}
-
-func (impl *userPassModelImpl) SetVerifiedUserInfoAndMarkVerifyEventCompleted(ctx context.Context, bizID string, userID uint64, userName string) (status bizuserinters.Status) {
+func (impl *userPassModelImpl) SetLoginCompleted(ctx context.Context, bizID string, userID uint64, userName string) (status bizuserinters.Status) {
 	status = impl.tokenManagerModel.SetAuthenticatorData(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
+		Authenticator: bizuserinters.AuthenticatorUserPass,
 		Event:         bizuserinters.VerifyEvent,
 	}, map[string]interface{}{
 		userPassUserID:   userID,
@@ -96,7 +87,7 @@ func (impl *userPassModelImpl) SetVerifiedUserInfoAndMarkVerifyEventCompleted(ct
 	}
 
 	status = impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
+		Authenticator: bizuserinters.AuthenticatorUserPass,
 		Event:         bizuserinters.VerifyEvent,
 	})
 
@@ -112,19 +103,18 @@ func (impl *userPassModelImpl) SetVerifiedUserInfoAndMarkVerifyEventCompleted(ct
 	return
 }
 
-func (impl *userPassModelImpl) AddUserAndMarkRegisterEventCompleted(ctx context.Context, bizID string, userName string, password string) (status bizuserinters.Status) {
-	_, status = impl.tokenManagerModel.GetCurrentUserInfo(ctx, bizID)
-	if status.Code == bizuserinters.StatusCodeOk {
-		status.Code = bizuserinters.StatusCodeDupError
+func (impl *userPassModelImpl) SetVerifyPasswordCompleted(ctx context.Context, bizID string) bizuserinters.Status {
+	return impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
+		Event:         bizuserinters.VerifyEvent,
+	})
+}
 
-		return
-	}
-
+func (impl *userPassModelImpl) SetChangePasswordCompleted(ctx context.Context, bizID string, password string) (status bizuserinters.Status) {
 	status = impl.tokenManagerModel.SetAuthenticatorData(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
+		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Event:         bizuserinters.SetupEvent,
 	}, map[string]interface{}{
-		userPassUsername: userName,
 		userPassPassword: password,
 	})
 	if status.Code != bizuserinters.StatusCodeOk {
@@ -132,17 +122,8 @@ func (impl *userPassModelImpl) AddUserAndMarkRegisterEventCompleted(ctx context.
 	}
 
 	status = impl.tokenManagerModel.MarkEventCompleted(ctx, bizID, bizuserinters.AuthenticatorEvent{
-		Authenticator: impl.authenticatorIdentity,
-		Event:         bizuserinters.RegisterEvent,
-	})
-
-	if status.Code != bizuserinters.StatusCodeOk {
-		return
-	}
-
-	status = impl.tokenManagerModel.SetCurrentUserInfo(ctx, bizID, &bizuserinters.UserIdentity{
-		ID:       0,
-		UserName: userName,
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	return

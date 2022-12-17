@@ -21,6 +21,14 @@ type directTokenManagerModelImpl struct {
 	tokenManager bizuserinters.TokenManager
 }
 
+func (m *directTokenManagerModelImpl) GetCurrentEvents(ctx context.Context, bizID string) (es []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+	return m.tokenManager.GetCurrentEvents(ctx, bizID)
+}
+
+func (m *directTokenManagerModelImpl) GetAllCompletedAuthenticatorEvents(ctx context.Context, bizID string) (es []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+	return m.tokenManager.GetAllCompletedAuthenticatorEvents(ctx, bizID)
+}
+
 func (m *directTokenManagerModelImpl) MarkEventCompleted(ctx context.Context, bizID string, e bizuserinters.AuthenticatorEvent) (status bizuserinters.Status) {
 	return m.tokenManager.MarkAuthenticatorEventCompleted(ctx, bizID, e)
 }

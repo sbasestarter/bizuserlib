@@ -97,14 +97,14 @@ type userManagerImpl struct {
 func (impl *userManagerImpl) RegisterBegin(ctx context.Context) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
 	return impl.xBegin(ctx, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUser,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	}, nil)
 }
 
 func (impl *userManagerImpl) RegisterCheck(ctx context.Context, bizID string) (neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
 	return impl.xCheck(ctx, bizID, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUser,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	}, false)
 }
 
@@ -113,13 +113,13 @@ func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (use
 
 	_, status = impl.xCheck(ctx, bizID, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUser,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	}, false)
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
 	}
 
-	ds, status := impl.tokenManager.GetAllAuthenticatorDatas(ctx, bizID, bizuserinters.RegisterEvent)
+	ds, status := impl.tokenManager.GetAllAuthenticatorDatas(ctx, bizID, bizuserinters.SetupEvent)
 	userIdentity, _ := impl.tokenManager.GetCurrentUserInfo(ctx, bizID)
 
 	userInfo, status := impl.model.AddUser(ctx, ds, userIdentity)
@@ -166,7 +166,7 @@ func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID
 		return
 	}
 
-	ds, _ := impl.tokenManager.GetAllAuthenticatorDatas(ctx, bizID, bizuserinters.RegisterEvent)
+	ds, _ := impl.tokenManager.GetAllAuthenticatorDatas(ctx, bizID, bizuserinters.VerifyEvent)
 
 	userIdentity, _ := impl.tokenManager.GetCurrentUserInfo(ctx, bizID)
 
@@ -182,9 +182,6 @@ func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID
 		UserName: userInfo.UserName,
 		Age:      time.Hour * 24 * 7,
 	})
-	if status.Code != bizuserinters.StatusCodeOk {
-		return
-	}
 
 	return
 }
@@ -222,7 +219,11 @@ func (impl *userManagerImpl) ChangeEnd(ctx context.Context, bizID string) (statu
 		return
 	}
 
-	ds, status := impl.tokenManager.GetAllAuthenticatorDatas(ctx, bizID, bizuserinters.RegisterEvent)
+	ds, status := impl.tokenManager.GetAllAuthenticatorDatas(ctx, bizID, bizuserinters.SetupEvent)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	userIdentity, _ := impl.tokenManager.GetCurrentUserInfo(ctx, bizID)
 
 	status = impl.model.Update(ctx, userIdentity.ID, ds, userIdentity)
@@ -230,10 +231,20 @@ func (impl *userManagerImpl) ChangeEnd(ctx context.Context, bizID string) (statu
 	return
 }
 
-func (impl *userManagerImpl) DeleteBegin(ctx context.Context, authenticators []bizuserinters.AuthenticatorIdentity) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
-	return impl.xBegin(ctx, bizuserinters.AuthenticatorEvent{
+func (impl *userManagerImpl) DeleteBegin(ctx context.Context, token string, authenticators []bizuserinters.AuthenticatorIdentity) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+	userTokenInfo, status := impl.userTokenManager.ExplainToken(ctx, token)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	return impl.xBeginEx(ctx, bizuserinters.AuthenticatorEvent{
 		Event: bizuserinters.DeleteEvent,
-	}, authenticators)
+	}, authenticators, func(bizID string) bizuserinters.Status {
+		return impl.tokenManager.SetCurrentUserInfo(ctx, bizID, &bizuserinters.UserIdentity{
+			ID:       userTokenInfo.ID,
+			UserName: userTokenInfo.UserName,
+		})
+	})
 }
 
 func (impl *userManagerImpl) DeleteCheck(ctx context.Context, bizID string) (neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
@@ -252,15 +263,32 @@ func (impl *userManagerImpl) DeleteEnd(ctx context.Context, bizID string) (statu
 		return
 	}
 
-	ds, status := impl.tokenManager.GetAllAuthenticatorDatas(ctx, bizID, bizuserinters.RegisterEvent)
+	caredAuthenticators, status := impl.getWorkData4CaredAuthenticators(ctx, bizID)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	userIdentity, _ := impl.tokenManager.GetCurrentUserInfo(ctx, bizID)
 
-	status = impl.model.Delete(ctx, ds, userIdentity)
+	var fields uint64
+
+	for _, authenticator := range caredAuthenticators {
+		if authenticator == bizuserinters.AuthenticatorGoogle2FA {
+			fields |= bizuserinters.DeleteFieldGoogle2FA
+		}
+	}
+
+	status = impl.model.Delete(ctx, userIdentity.ID, fields, userIdentity)
 
 	return
 }
 
-func (impl *userManagerImpl) ListUsers(ctx context.Context) (users []*bizuserinters.UserInfo, status bizuserinters.Status) {
+func (impl *userManagerImpl) ListUsers(ctx context.Context, token string) (users []*bizuserinters.UserInfo, status bizuserinters.Status) {
+	_, status = impl.userTokenManager.ExplainToken(ctx, token)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	return impl.apiModel.ListUsers(ctx)
 }
 
@@ -280,7 +308,7 @@ func (impl *userManagerImpl) getPolicyByPurpose(purpose bizuserinters.Event) Pol
 	var policy Policy
 
 	switch purpose {
-	case bizuserinters.RegisterEvent:
+	case bizuserinters.SetupEvent:
 		policy = impl.registerPolicy
 	case bizuserinters.VerifyEvent:
 		policy = impl.loginPolicy
@@ -339,6 +367,7 @@ func (impl *userManagerImpl) xBeginEx(ctx context.Context, purpose bizuserinters
 	}
 
 	neededOrEvent, status = policy.Check(ctx, CheckPolicyData{
+		BizID:   bizID,
 		Purpose: purpose,
 	})
 
@@ -376,6 +405,7 @@ func (impl *userManagerImpl) xCheck(ctx context.Context, bizID string, purpose b
 	}
 
 	neededOrEvent, status = policy.Check(ctx, CheckPolicyData{
+		BizID:      bizID,
 		Purpose:    purpose,
 		DoneEvents: completedEvents,
 	})

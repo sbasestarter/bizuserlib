@@ -8,6 +8,7 @@ type UserInfo struct {
 	ID           uint64
 	UserName     string
 	HasGoogle2FA bool
+	Admin        bool
 }
 
 type UserManager interface {
@@ -24,11 +25,11 @@ type UserManager interface {
 	ChangeCheck(ctx context.Context, bizID string) (neededOrEvent []AuthenticatorEvent, status Status)
 	ChangeEnd(ctx context.Context, bizID string) (status Status)
 
-	DeleteBegin(ctx context.Context, authenticators []AuthenticatorIdentity) (bizID string, neededOrEvent []AuthenticatorEvent, status Status)
+	DeleteBegin(ctx context.Context, token string, authenticators []AuthenticatorIdentity) (bizID string, neededOrEvent []AuthenticatorEvent, status Status)
 	DeleteCheck(ctx context.Context, bizID string) (neededOrEvent []AuthenticatorEvent, status Status)
 	DeleteEnd(ctx context.Context, bizID string) (status Status)
 
-	ListUsers(ctx context.Context) (users []*UserInfo, status Status)
+	ListUsers(ctx context.Context, token string) (users []*UserInfo, status Status)
 	CheckToken(ctx context.Context, token string) (info *UserTokenInfo, status Status)
 	RenewToken(ctx context.Context, token string) (newToken string, info *UserTokenInfo, status Status)
 }

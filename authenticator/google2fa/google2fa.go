@@ -3,14 +3,11 @@ package google2fa
 import (
 	"context"
 
-	"github.com/sbasestarter/bizuserlib/authenticator"
 	"github.com/sbasestarter/bizuserlib/bizuserinters"
 	authenticatorlib "github.com/sgostarter/libeasygo/authenticator"
 )
 
 type Authenticator interface {
-	bizuserinters.Authenticator
-
 	GetSetupInfo(ctx context.Context, bizID string) (secretKey, qrCode string, status bizuserinters.Status)
 	DoSetup(ctx context.Context, bizID, code string) (status bizuserinters.Status)
 
@@ -23,18 +20,12 @@ func NewAuthenticator(model Model, issuer string) Authenticator {
 	}
 
 	return &authenticatorImpl{
-		Authenticator: authenticator.Authenticator{
-			Model:         model,
-			Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-		},
 		model:  model,
 		issuer: issuer,
 	}
 }
 
 type authenticatorImpl struct {
-	authenticator.Authenticator
-
 	model  Model
 	issuer string
 }
@@ -44,7 +35,14 @@ type authenticatorImpl struct {
 //
 
 func (impl *authenticatorImpl) GetSetupInfo(ctx context.Context, bizID string) (secretKey, qrCode string, status bizuserinters.Status) {
-	secretKey, status = impl.model.GetGoogle2FASecretKey(ctx, bizID)
+	status = impl.model.MustCurrentEvent(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+		Event:         bizuserinters.SetupEvent,
+	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	id, status := impl.model.GetGoogle2FASetupUserInfo(ctx, bizID)
 
 	if status.Code != bizuserinters.StatusCodeOk {
@@ -55,14 +53,19 @@ func (impl *authenticatorImpl) GetSetupInfo(ctx context.Context, bizID string) (
 	qrCode = authenticatorlib.CreateGoogleAuthQRCodeData(secretKey, id, impl.issuer)
 
 	status = impl.model.CacheGoogle2FASecretKey(ctx, bizID, secretKey)
-	if status.Code != bizuserinters.StatusCodeOk {
-		return
-	}
 
 	return
 }
 
 func (impl *authenticatorImpl) DoSetup(ctx context.Context, bizID, code string) (status bizuserinters.Status) {
+	status = impl.model.MustCurrentEvent(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+		Event:         bizuserinters.SetupEvent,
+	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	secretKey, status := impl.model.GetCachedGoogle2FASecretKey(ctx, bizID)
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
@@ -81,12 +84,20 @@ func (impl *authenticatorImpl) DoSetup(ctx context.Context, bizID, code string) 
 		return
 	}
 
-	status = impl.model.SetGoogle2FASecretKeyAndMarkRegisterEventCompleted(ctx, bizID, secretKey)
+	status = impl.model.SetSetupGoogle2FACompleted(ctx, bizID, secretKey)
 
 	return status
 }
 
 func (impl *authenticatorImpl) Verify(ctx context.Context, bizID, code string) (status bizuserinters.Status) {
+	status = impl.model.MustCurrentEvent(ctx, bizID, bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+		Event:         bizuserinters.VerifyEvent,
+	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
 	secretKey, status := impl.model.GetGoogle2FASecretKey(ctx, bizID)
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
@@ -105,7 +116,7 @@ func (impl *authenticatorImpl) Verify(ctx context.Context, bizID, code string) (
 		return
 	}
 
-	status = impl.model.MarkVerifyEventCompleted(ctx, bizID)
+	status = impl.model.SetVerifyGoogle2FACompleted(ctx, bizID)
 
 	return
 }

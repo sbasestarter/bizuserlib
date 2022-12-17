@@ -11,7 +11,7 @@ import (
 
 // DefaultConditionAuthenticatorPolicy .
 // nolint: funlen
-func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
+func DefaultConditionAuthenticatorPolicy(tokenManager bizuserinters.TokenManager4Policy) bizuserlib.Policy {
 	key := reflect.TypeOf(bizuserinters.AuthenticatorEvent{}).Name()
 	libexpression.UpdateOpValueTypeMap(key, reflect.TypeOf(bizuserinters.AuthenticatorEvent{}))
 
@@ -30,7 +30,7 @@ func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
 		ValueType: key,
 		Value: &bizuserinters.AuthenticatorEvent{
 			Authenticator: bizuserinters.AuthenticatorUserPass,
-			Event:         bizuserinters.RegisterEvent,
+			Event:         bizuserinters.SetupEvent,
 		},
 	})
 
@@ -39,13 +39,13 @@ func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
 		ValueType: key,
 		Value: &bizuserinters.AuthenticatorEvent{
 			Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-			Event:         bizuserinters.RegisterEvent,
+			Event:         bizuserinters.SetupEvent,
 		},
 	})
 
 	conditions[bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUser,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	}] = op
 
 	//
@@ -91,7 +91,7 @@ func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
 		OpType:    libexpression.OpTypeValue,
 		ValueType: key,
 		Value: &bizuserinters.AuthenticatorEvent{
-			Authenticator: bizuserinters.AuthenticatorUserPass,
+			Authenticator: bizuserinters.AuthenticatorUserPassPass,
 			Event:         bizuserinters.VerifyEvent,
 		},
 	})
@@ -100,13 +100,13 @@ func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
 		OpType:    libexpression.OpTypeValue,
 		ValueType: key,
 		Value: &bizuserinters.AuthenticatorEvent{
-			Authenticator: bizuserinters.AuthenticatorUserPass,
-			Event:         bizuserinters.RegisterEvent,
+			Authenticator: bizuserinters.AuthenticatorUserPassPass,
+			Event:         bizuserinters.SetupEvent,
 		},
 	})
 
 	conditions[bizuserinters.AuthenticatorEvent{
-		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
 		Event:         bizuserinters.ChangeEvent,
 	}] = op
 
@@ -122,7 +122,7 @@ func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
 		OpType:    libexpression.OpTypeValue,
 		ValueType: key,
 		Value: &bizuserinters.AuthenticatorEvent{
-			Authenticator: bizuserinters.AuthenticatorUserPass,
+			Authenticator: bizuserinters.AuthenticatorUserPassPass,
 			Event:         bizuserinters.VerifyEvent,
 		},
 	})
@@ -145,7 +145,7 @@ func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
 				ValueType: key,
 				Value: &bizuserinters.AuthenticatorEvent{
 					Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-					Event:         bizuserinters.RegisterEvent,
+					Event:         bizuserinters.SetupEvent,
 				},
 			},
 		},
@@ -156,17 +156,54 @@ func DefaultConditionAuthenticatorPolicy() bizuserlib.Policy {
 		Event:         bizuserinters.ChangeEvent,
 	}] = op
 
-	return NewConditionAuthenticatorPolicy(conditions)
+	//
+	// delete google2fa
+	//
+
+	op = &libexpression.Op{
+		OpType: libexpression.OpTypeOr,
+	}
+
+	op.Values = append(op.Values, &libexpression.Op{
+		OpType:    libexpression.OpTypeValue,
+		ValueType: key,
+		Value: &bizuserinters.AuthenticatorEvent{
+			Authenticator: bizuserinters.AuthenticatorUserPassPass,
+			Event:         bizuserinters.VerifyEvent,
+		},
+	})
+
+	op.Values = append(op.Values, &libexpression.Op{
+		OpType:    libexpression.OpTypeValue,
+		ValueType: key,
+		Value: &bizuserinters.AuthenticatorEvent{
+			Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+			Event:         bizuserinters.VerifyEvent,
+		},
+	})
+
+	conditions[bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+		Event:         bizuserinters.DeleteEvent,
+	}] = op
+
+	return NewConditionAuthenticatorPolicy(tokenManager, conditions)
 }
 
-func NewConditionAuthenticatorPolicy(conditions map[bizuserinters.AuthenticatorEvent]*libexpression.Op) bizuserlib.Policy {
+func NewConditionAuthenticatorPolicy(tokenManager bizuserinters.TokenManager4Policy, conditions map[bizuserinters.AuthenticatorEvent]*libexpression.Op) bizuserlib.Policy {
+	if tokenManager == nil || len(conditions) == 0 {
+		return nil
+	}
+
 	return &conditionAuthenticatorPolicy{
-		conditions: conditions,
+		tokenManager: tokenManager,
+		conditions:   conditions,
 	}
 }
 
 type conditionAuthenticatorPolicy struct {
-	conditions map[bizuserinters.AuthenticatorEvent]*libexpression.Op
+	tokenManager bizuserinters.TokenManager4Policy
+	conditions   map[bizuserinters.AuthenticatorEvent]*libexpression.Op
 }
 
 func (impl *conditionAuthenticatorPolicy) Check(ctx context.Context, d bizuserlib.CheckPolicyData) (neededOrEvents []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
@@ -204,13 +241,18 @@ func (impl *conditionAuthenticatorPolicy) Check(ctx context.Context, d bizuserli
 			neededOrEvents = append(neededOrEvents, *e)
 		}
 
+		status = impl.tokenManager.SetCurrentEvents(ctx, d.BizID, neededOrEvents)
+		if status.Code != bizuserinters.StatusCodeOk {
+			return
+		}
+
 		status.Code = bizuserinters.StatusCodeNeedAuthenticator
 
 		return
 	}
 
 	if r == libexpression.CheckResultTrue {
-		status.Code = bizuserinters.StatusCodeOk
+		status = impl.tokenManager.ClearCurrentEvents(ctx, d.BizID)
 
 		return
 	}

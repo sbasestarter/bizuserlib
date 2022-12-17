@@ -35,14 +35,14 @@ func Test1(t *testing.T) {
 	//userTokenManager := usertokenmanagermem.NewMemoryUserTokenManager()
 	userTokenManager := usertokenmanagermem.NewJWTUserTokenManager("x", usertokenmanagermem.NewMemoryJWTDataStorage())
 
-	userPassGoogle2FARegisterPolicy := policy.NewSerialAuthenticatorPolicy(bizuserinters.AuthenticatorEvent{
+	userPassGoogle2FARegisterPolicy := policy.NewSerialAuthenticatorPolicy(tokenManager, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUserPass,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	}, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
-	userPassGoogle2FALoginPolicy := policy.NewSerialAuthenticatorPolicy(bizuserinters.AuthenticatorEvent{
+	userPassGoogle2FALoginPolicy := policy.NewSerialAuthenticatorPolicy(tokenManager, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUserPass,
 		Event:         bizuserinters.VerifyEvent,
 	}, bizuserinters.AuthenticatorEvent{
@@ -63,7 +63,7 @@ func Test1(t *testing.T) {
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUserPass,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	tokenManagerModel := authenticatormodel.NewDirectTokenManagerModel(tokenManager)
@@ -71,14 +71,7 @@ func Test1(t *testing.T) {
 
 	userPassAuthenticator := userpass.NewAuthenticator(userPassModel, "x")
 
-	{
-		status = userPassAuthenticator.RegisterCheck(ctx, bizID)
-		assert.EqualValues(t, bizuserinters.StatusCodeNotCompleted, status.Code)
-	}
-
-	status = userPassAuthenticator.RegisterUserPass(ctx, bizID, "user1", "pass2")
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-	status = userPassAuthenticator.RegisterCheck(ctx, bizID)
+	status = userPassAuthenticator.Register(ctx, bizID, "user1", "pass2")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.RegisterCheck(ctx, bizID)
@@ -87,7 +80,7 @@ func Test1(t *testing.T) {
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	cacheMode := authenticatormodel.NewMemoryCacheModel()
@@ -104,9 +97,6 @@ func Test1(t *testing.T) {
 	status = google2FAAuthenticator.DoSetup(ctx, bizID, code)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
-	status = google2FAAuthenticator.RegisterCheck(ctx, bizID)
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
 	neededOrAuthenticators, status = userManager.RegisterCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 0, len(neededOrAuthenticators))
@@ -116,7 +106,7 @@ func Test1(t *testing.T) {
 	assert.True(t, len(token) > 0)
 	assert.True(t, userID > 0)
 
-	users, status := userManager.ListUsers(ctx)
+	users, status := userManager.ListUsers(ctx, token)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 1, len(users))
 	assert.EqualValues(t, "user1", users[0].UserName)
@@ -139,13 +129,10 @@ func Test1(t *testing.T) {
 		Event:         bizuserinters.VerifyEvent,
 	})
 
-	status = userPassAuthenticator.VerifyUserPass(ctx, bizID, "user1", "pass1")
+	status = userPassAuthenticator.Login(ctx, bizID, "user1", "pass1")
 	assert.EqualValues(t, bizuserinters.StatusCodeVerifyError, status.Code)
 
-	status = userPassAuthenticator.VerifyUserPass(ctx, bizID, "user1", "pass2")
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
-	status = userPassAuthenticator.VerifyCheck(ctx, bizID)
+	status = userPassAuthenticator.Login(ctx, bizID, "user1", "pass2")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.LoginCheck(ctx, bizID)
@@ -160,9 +147,6 @@ func Test1(t *testing.T) {
 	assert.Nil(t, err)
 
 	status = google2FAAuthenticator.Verify(ctx, bizID, code)
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
-	status = google2FAAuthenticator.VerifyCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.LoginCheck(ctx, bizID)
@@ -186,11 +170,11 @@ func TestAnonymousAuthenticator(t *testing.T) {
 
 	tokenManager := tokenmanagermem.NewMemoryTokenManager()
 	userTokenManager := usertokenmanagermem.NewMemoryUserTokenManager()
-	anonymousRegisterPolicy := policy.NewSerialAuthenticatorPolicy(bizuserinters.AuthenticatorEvent{
+	anonymousRegisterPolicy := policy.NewSerialAuthenticatorPolicy(tokenManager, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorAnonymous,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
-	anonymousLoginPolicy := policy.NewSerialAuthenticatorPolicy(bizuserinters.AuthenticatorEvent{
+	anonymousLoginPolicy := policy.NewSerialAuthenticatorPolicy(tokenManager, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorAnonymous,
 		Event:         bizuserinters.VerifyEvent,
 	})
@@ -214,9 +198,6 @@ func TestAnonymousAuthenticator(t *testing.T) {
 	anonymousAuthenticator := anonymous.NewAuthenticator(modelmem.NewAnonymousModel(tokenManagerModel))
 
 	status = anonymousAuthenticator.SetUserName(ctx, bizID, "user1x")
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
-	status = anonymousAuthenticator.VerifyCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.LoginCheck(ctx, bizID)
@@ -256,13 +237,13 @@ func TestConditionPolicy2(t *testing.T) {
 }
 
 // nolint
-func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
+func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	jwtDataStorage usertokenmanagerinter.JWTDataStorage, dbModel authenticator.DBModel) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	userTokenManager := usertokenmanagermem.NewJWTUserTokenManager("x", jwtDataStorage)
-	ply := policy.DefaultConditionAuthenticatorPolicy()
+	ply := policy.DefaultConditionAuthenticatorPolicy(tokenManager)
 
 	userManagerModel := modelmem.NewUserManagerModel(dbModel)
 
@@ -276,7 +257,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUserPass,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	tokenManagerModel := authenticatormodel.NewDirectTokenManagerModel(tokenManager)
@@ -284,14 +265,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 
 	userPassAuthenticator := userpass.NewAuthenticator(userPassModel, "x")
 
-	{
-		status = userPassAuthenticator.RegisterCheck(ctx, bizID)
-		assert.EqualValues(t, bizuserinters.StatusCodeNotCompleted, status.Code)
-	}
-
-	status = userPassAuthenticator.RegisterUserPass(ctx, bizID, "user1", "pass2")
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-	status = userPassAuthenticator.RegisterCheck(ctx, bizID)
+	status = userPassAuthenticator.Register(ctx, bizID, "user1", "pass2")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.RegisterCheck(ctx, bizID)
@@ -300,7 +274,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	cacheMode := authenticatormodel.NewMemoryCacheModel()
@@ -317,9 +291,6 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	status = google2FAAuthenticator.DoSetup(ctx, bizID, code)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
-	status = google2FAAuthenticator.RegisterCheck(ctx, bizID)
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
 	neededOrAuthenticators, status = userManager.RegisterCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 0, len(neededOrAuthenticators))
@@ -329,7 +300,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.True(t, len(token) > 0)
 	assert.True(t, userID > 0)
 
-	users, status := userManager.ListUsers(ctx)
+	users, status := userManager.ListUsers(ctx, token)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 1, len(users))
 	assert.EqualValues(t, "user1", users[0].UserName)
@@ -353,13 +324,10 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 		Event:         bizuserinters.VerifyEvent,
 	})
 
-	status = userPassAuthenticator.VerifyUserPass(ctx, bizID, "user1", "pass1")
+	status = userPassAuthenticator.Login(ctx, bizID, "user1", "pass1")
 	assert.EqualValues(t, bizuserinters.StatusCodeVerifyError, status.Code)
 
-	status = userPassAuthenticator.VerifyUserPass(ctx, bizID, "user1", "pass2")
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
-	status = userPassAuthenticator.VerifyCheck(ctx, bizID)
+	status = userPassAuthenticator.Login(ctx, bizID, "user1", "pass2")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.LoginCheck(ctx, bizID)
@@ -374,9 +342,6 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.Nil(t, err)
 
 	status = google2FAAuthenticator.Verify(ctx, bizID, code)
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
-	status = google2FAAuthenticator.VerifyCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.LoginCheck(ctx, bizID)
@@ -398,12 +363,12 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	//
 
 	bizID, neededOrAuthenticators, status = userManager.ChangeBegin(ctx, token,
-		[]bizuserinters.AuthenticatorIdentity{bizuserinters.AuthenticatorUserPass})
+		[]bizuserinters.AuthenticatorIdentity{bizuserinters.AuthenticatorUserPassPass})
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
-		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
 		Event:         bizuserinters.VerifyEvent,
 	})
 
@@ -411,7 +376,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
-		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
 		Event:         bizuserinters.VerifyEvent,
 	})
 
@@ -422,8 +387,8 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
-		Authenticator: bizuserinters.AuthenticatorUserPass,
-		Event:         bizuserinters.RegisterEvent,
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	status = userPassAuthenticator.ChangePassword(ctx, bizID, "pass3")
@@ -445,7 +410,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) == 2)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
-		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
 		Event:         bizuserinters.VerifyEvent,
 	})
 	assert.EqualValues(t, neededOrAuthenticators[1], bizuserinters.AuthenticatorEvent{
@@ -453,7 +418,10 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 		Event:         bizuserinters.VerifyEvent,
 	})
 
-	status = userPassAuthenticator.VerifyUserPass(ctx, bizID, "user1", "pass3")
+	status = userPassAuthenticator.Login(ctx, bizID, "user1", "pass3")
+	assert.EqualValues(t, bizuserinters.StatusCodeNoDataError, status.Code)
+
+	status = userPassAuthenticator.VerifyPassword(ctx, bizID, "pass3")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	neededOrAuthenticators, status = userManager.ChangeCheck(ctx, bizID)
@@ -462,7 +430,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	secretKey, qrCode, status = google2FAAuthenticator.GetSetupInfo(ctx, bizID)
@@ -473,9 +441,6 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.Nil(t, err)
 
 	status = google2FAAuthenticator.DoSetup(ctx, bizID, code)
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
-	status = google2FAAuthenticator.RegisterCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	_, status = userManager.ChangeCheck(ctx, bizID)
@@ -494,7 +459,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) == 2)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
-		Authenticator: bizuserinters.AuthenticatorUserPass,
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
 		Event:         bizuserinters.VerifyEvent,
 	})
 	assert.EqualValues(t, neededOrAuthenticators[1], bizuserinters.AuthenticatorEvent{
@@ -508,16 +473,13 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	status = google2FAAuthenticator.Verify(ctx, bizID, code)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
-	status = google2FAAuthenticator.VerifyCheck(ctx, bizID)
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
 	neededOrAuthenticators, status = userManager.ChangeCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) > 0)
 	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
-		Event:         bizuserinters.RegisterEvent,
+		Event:         bizuserinters.SetupEvent,
 	})
 
 	secretKey, qrCode, status = google2FAAuthenticator.GetSetupInfo(ctx, bizID)
@@ -530,12 +492,32 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManager,
 	status = google2FAAuthenticator.DoSetup(ctx, bizID, code)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
-	status = google2FAAuthenticator.RegisterCheck(ctx, bizID)
-	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-
 	_, status = userManager.ChangeCheck(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
 	status = userManager.ChangeEnd(ctx, bizID)
+	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
+
+	bizID, neededOrAuthenticators, status = userManager.DeleteBegin(ctx, token,
+		[]bizuserinters.AuthenticatorIdentity{bizuserinters.AuthenticatorGoogle2FA})
+	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
+	assert.True(t, len(bizID) > 0)
+	assert.True(t, len(neededOrAuthenticators) == 2)
+	assert.EqualValues(t, neededOrAuthenticators[0], bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorUserPassPass,
+		Event:         bizuserinters.VerifyEvent,
+	})
+	assert.EqualValues(t, neededOrAuthenticators[1], bizuserinters.AuthenticatorEvent{
+		Authenticator: bizuserinters.AuthenticatorGoogle2FA,
+		Event:         bizuserinters.VerifyEvent,
+	})
+
+	status = userPassAuthenticator.VerifyPassword(ctx, bizID, "pass3")
+	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
+
+	_, status = userManager.DeleteCheck(ctx, bizID)
+	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
+
+	status = userManager.DeleteEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 }

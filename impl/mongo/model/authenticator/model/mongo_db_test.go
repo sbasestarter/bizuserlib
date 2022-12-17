@@ -13,6 +13,11 @@ import (
 type utTokenManger struct {
 }
 
+func (impl *utTokenManger) GetCurrentEvents(ctx context.Context, bizID string) (es []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (impl *utTokenManger) SetWorkData(ctx context.Context, bizID string, key string, d []byte) (status bizuserinters.Status) {
 	//TODO implement me
 	panic("implement me")

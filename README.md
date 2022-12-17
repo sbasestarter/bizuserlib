@@ -26,3 +26,8 @@ call user-manager.login_check, return register_google2fa[event]
     call google2fa.register_check, return ok, set register_google2fa[event] and verify_google2fa[event] completed
 call user-manager.login_end, return ok and token
 ```
+
+## TDL
+
+* 修改，删除当前只支持一个Authenticator
+* 

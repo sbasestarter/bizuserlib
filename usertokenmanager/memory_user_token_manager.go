@@ -24,6 +24,8 @@ func (impl *memoryUserTokenManagerImpl) GenToken(_ context.Context, ui *bizuseri
 
 	userInfo := *ui
 
+	userInfo.StartAt = time.Now()
+
 	if userInfo.Age <= 0 {
 		userInfo.Age = cache.NoExpiration
 	}
@@ -73,6 +75,8 @@ func (impl *memoryUserTokenManagerImpl) RenewToken(ctx context.Context, token st
 	}
 
 	newToken = uuid.NewV4().String()
+
+	userInfo.StartAt = time.Now()
 
 	impl.dataCache.Set(newToken, userInfo, userInfo.Age)
 	impl.dataCache.Set(token, userInfo, time.Minute)

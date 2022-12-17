@@ -4,10 +4,16 @@ import (
 	"context"
 )
 
+type AdminFlag struct {
+	UserID uint64
+	Flag   bool
+}
+
 type UserInfoInner struct {
 	UserIdentity
 	Password           string
 	Google2FASecretKey string
+	AdminFlags         []AdminFlag
 }
 
 type UserIdentity struct {
@@ -35,4 +41,21 @@ type TokenManager interface {
 
 	SetCurrentUserInfo(ctx context.Context, bizID string, ui *UserIdentity) (status Status)
 	GetCurrentUserInfo(ctx context.Context, bizID string) (ui *UserIdentity, status Status)
+
+	//
+	//
+	//
+
+	GetCurrentEvents(ctx context.Context, bizID string) (es []AuthenticatorEvent, status Status)
+}
+
+type TokenManager4Policy interface {
+	TokenManager
+
+	SetCurrentEvents(ctx context.Context, bizID string, es []AuthenticatorEvent) Status
+	ClearCurrentEvents(ctx context.Context, bizID string) Status
+}
+
+type TokenManagerAll interface {
+	TokenManager4Policy
 }

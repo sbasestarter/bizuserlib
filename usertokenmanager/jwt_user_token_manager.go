@@ -132,6 +132,8 @@ func (impl *jwtUserTokenManagerImpl) RenewToken(ctx context.Context, token strin
 //
 
 func (impl *jwtUserTokenManagerImpl) generateToken(userInfo *bizuserinters.UserTokenInfo) (token string, err error) {
+	userInfo.StartAt = time.Now()
+
 	if userInfo.Age <= 0 {
 		userInfo.Age = defaultTokenExpiration
 	}

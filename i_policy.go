@@ -7,6 +7,7 @@ import (
 )
 
 type CheckPolicyData struct {
+	BizID      string
 	Purpose    bizuserinters.AuthenticatorEvent
 	DoneEvents []bizuserinters.AuthenticatorEvent
 }

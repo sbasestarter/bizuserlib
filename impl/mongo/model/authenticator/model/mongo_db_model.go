@@ -6,7 +6,6 @@ import (
 
 	"github.com/sbasestarter/bizuserlib/bizuserinters"
 	"github.com/sbasestarter/bizuserlib/bizuserinters/model/authenticator"
-	"github.com/sbasestarter/bizuserlib/bizuserinters/model/authenticator/usermanager"
 	"github.com/sgostarter/i/l"
 	"github.com/sgostarter/libeasygo/stg/mongoex"
 	"go.mongodb.org/mongo-driver/bson"
@@ -69,6 +68,37 @@ type dbModelImpl struct {
 	collection     *mongo.Collection
 	tokenManager   bizuserinters.TokenManager
 	logger         l.Wrapper
+}
+
+func (impl *dbModelImpl) IsAdmin(ctx context.Context, bizID string) (adminFlag bool, status bizuserinters.Status) {
+	userInfo, status := impl.tokenManager.GetCurrentUserInfo(ctx, bizID)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	if userInfo.ID == 0 {
+		status = bizuserinters.MakeStatusByCode(bizuserinters.StatusCodeNoDataError)
+
+		return
+	}
+
+	var u User
+	if err := impl.collection.FindOne(ctx,
+		bson.M{
+			"_id": userInfo.ID,
+		}).Decode(&u); err != nil {
+		impl.logger.WithFields(l.ErrorField(err)).Error("MongoFindFailed")
+
+		status = bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
+
+		return
+	}
+
+	adminFlag = u.Admin
+
+	status = bizuserinters.MakeSuccessStatus()
+
+	return
 }
 
 func (impl *dbModelImpl) init() {
@@ -145,11 +175,25 @@ func (impl *dbModelImpl) UpdateUser(ctx context.Context, userInfo *bizuserinters
 		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
 	}
 
+	for _, flag := range userInfo.AdminFlags {
+		if flag.UserID == 0 {
+			continue
+		}
+
+		impl.collection.FindOneAndUpdate(ctx, bson.M{
+			"_id": flag.UserID,
+		}, bson.M{
+			"$set": bson.M{
+				"admin": flag.Flag,
+			},
+		})
+	}
+
 	return bizuserinters.MakeSuccessStatus()
 }
 
 func (impl *dbModelImpl) Delete(ctx context.Context, userID uint64, fields uint64) (status bizuserinters.Status) {
-	if fields&usermanager.DeleteFieldUser == usermanager.DeleteFieldUser {
+	if fields&bizuserinters.DeleteFieldUser == bizuserinters.DeleteFieldUser {
 		_, err := impl.collection.DeleteOne(ctx, bson.M{"_id": userID})
 		if err != nil {
 			return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeOk, err)
@@ -158,7 +202,7 @@ func (impl *dbModelImpl) Delete(ctx context.Context, userID uint64, fields uint6
 		return bizuserinters.MakeSuccessStatus()
 	}
 
-	if fields&usermanager.DeleteFieldGoogle2FA == usermanager.DeleteFieldGoogle2FA {
+	if fields&bizuserinters.DeleteFieldGoogle2FA == bizuserinters.DeleteFieldGoogle2FA {
 		if err := impl.collection.FindOneAndUpdate(ctx, bson.M{
 			"_id": userID,
 		}, bson.M{
@@ -227,6 +271,11 @@ func (impl *dbModelImpl) AddUser(ctx context.Context, userInfo *bizuserinters.Us
 		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
 	}
 
+	n, err := impl.collection.EstimatedDocumentCount(ctx)
+	if err != nil {
+		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
+	}
+
 	u := &User{
 		ID:        id,
 		UserName:  userInfo.UserName,
@@ -234,6 +283,11 @@ func (impl *dbModelImpl) AddUser(ctx context.Context, userInfo *bizuserinters.Us
 		Google2FA: userInfo.Google2FASecretKey,
 		CreateAt:  time.Now().Unix(),
 	}
+
+	if n == 0 {
+		u.Admin = true
+	}
+
 	_, err = impl.collection.InsertOne(ctx, u)
 
 	if err != nil {
@@ -247,6 +301,20 @@ func (impl *dbModelImpl) AddUser(ctx context.Context, userInfo *bizuserinters.Us
 	}
 
 	userInfo.ID = id
+
+	for _, flag := range userInfo.AdminFlags {
+		if flag.UserID == 0 {
+			continue
+		}
+
+		impl.collection.FindOneAndUpdate(ctx, bson.M{
+			"_id": flag.UserID,
+		}, bson.M{
+			"$set": bson.M{
+				"admin": flag.Flag,
+			},
+		})
+	}
 
 	return bizuserinters.MakeSuccessStatus()
 }
@@ -271,6 +339,7 @@ func (impl *dbModelImpl) ListUsers(ctx context.Context) (users []*bizuserinters.
 			ID:           u.ID,
 			UserName:     u.UserName,
 			HasGoogle2FA: u.Google2FA != "",
+			Admin:        u.Admin,
 		})
 	}
 
