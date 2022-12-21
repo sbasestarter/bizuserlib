@@ -3,6 +3,8 @@ package bizuserinters
 type AuthenticatorIdentity string
 
 const (
+	AuthenticatorUnspecified AuthenticatorIdentity = "_unspecified"
+
 	AuthenticatorUser AuthenticatorIdentity = "__user"
 
 	AuthenticatorAnonymous    AuthenticatorIdentity = "_anonymous"
