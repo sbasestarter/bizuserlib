@@ -32,4 +32,5 @@ type UserManager interface {
 	ListUsers(ctx context.Context, token string) (users []*UserInfo, status Status)
 	CheckToken(ctx context.Context, token string) (info *UserTokenInfo, status Status)
 	RenewToken(ctx context.Context, token string) (newToken string, info *UserTokenInfo, status Status)
+	Logout(ctx context.Context, token string) Status
 }

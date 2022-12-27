@@ -300,6 +300,10 @@ func (impl *userManagerImpl) RenewToken(ctx context.Context, token string) (newT
 	return impl.userTokenManager.RenewToken(ctx, token)
 }
 
+func (impl *userManagerImpl) Logout(ctx context.Context, token string) bizuserinters.Status {
+	return impl.userTokenManager.DeleteToken(ctx, token)
+}
+
 //
 //
 //
