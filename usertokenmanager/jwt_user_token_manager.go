@@ -38,6 +38,11 @@ type UserClaims struct {
 	jwt.StandardClaims
 }
 
+type SSOClaims struct {
+	Token string
+	jwt.StandardClaims
+}
+
 func (impl *jwtUserTokenManagerImpl) GenToken(ctx context.Context, userInfo *bizuserinters.UserTokenInfo) (
 	token string, status bizuserinters.Status) {
 	if userInfo == nil || (userInfo.ID == 0 && userInfo.UserName == "") {
@@ -127,6 +132,49 @@ func (impl *jwtUserTokenManagerImpl) RenewToken(ctx context.Context, token strin
 	return
 }
 
+func (impl *jwtUserTokenManagerImpl) GenSSOToken(ctx context.Context, parentToken string,
+	expiration time.Duration) (token string, status bizuserinters.Status) {
+	_, status = impl.ExplainToken(ctx, parentToken)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	token, err := impl.generateSSOToken(SSOClaims{
+		Token: parentToken,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: time.Now().Add(expiration).Unix(),
+		},
+	})
+	if err != nil {
+		status = bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInternalError, err)
+
+		return
+	}
+
+	status = bizuserinters.MakeSuccessStatus()
+
+	return
+}
+
+func (impl *jwtUserTokenManagerImpl) ExplainSSOToken(ctx context.Context, token string) (userInfo *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
+	if impl.hasTokenDeleted(ctx, token) {
+		status = bizuserinters.MakeStatusByCode(bizuserinters.StatusCodeExpiredError)
+
+		return
+	}
+
+	parentToken, err := impl.parseSSOToken(token)
+	if err != nil {
+		status = bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInvalidArgsError, err)
+
+		return
+	}
+
+	userInfo, status = impl.ExplainToken(ctx, parentToken)
+
+	return
+}
+
 //
 //
 //
@@ -148,6 +196,12 @@ func (impl *jwtUserTokenManagerImpl) generateToken(userInfo *bizuserinters.UserT
 	return
 }
 
+func (impl *jwtUserTokenManagerImpl) generateSSOToken(c SSOClaims) (token string, err error) {
+	token, err = jwt.NewWithClaims(jwt.SigningMethodHS256, c).SignedString(impl.tokenSecKey)
+
+	return
+}
+
 func (impl *jwtUserTokenManagerImpl) parseToken(token string) (userInfo *bizuserinters.UserTokenInfo, expireAt int64, err error) {
 	var claims UserClaims
 
@@ -161,6 +215,25 @@ func (impl *jwtUserTokenManagerImpl) parseToken(token string) (userInfo *bizuser
 	if userClaims, ok := tokenObj.Claims.(*UserClaims); ok && tokenObj.Valid {
 		userInfo = &userClaims.UserTokenInfo
 		expireAt = userClaims.ExpiresAt
+	} else {
+		err = commerr.ErrUnauthenticated
+	}
+
+	return
+}
+
+func (impl *jwtUserTokenManagerImpl) parseSSOToken(token string) (parentToken string, err error) {
+	var claims UserClaims
+
+	tokenObj, err := jwt.ParseWithClaims(token, &claims, func(token *jwt.Token) (interface{}, error) {
+		return impl.tokenSecKey, nil
+	})
+	if err != nil {
+		return
+	}
+
+	if c, ok := tokenObj.Claims.(*SSOClaims); ok && tokenObj.Valid {
+		parentToken = c.Token
 	} else {
 		err = commerr.ErrUnauthenticated
 	}

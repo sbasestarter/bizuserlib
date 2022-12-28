@@ -7,6 +7,7 @@ import (
 	"github.com/patrickmn/go-cache"
 	uuid "github.com/satori/go.uuid"
 	"github.com/sbasestarter/bizuserlib/bizuserinters"
+	"github.com/spf13/cast"
 )
 
 func NewMemoryUserTokenManager() bizuserinters.UserTokenManager {
@@ -82,6 +83,41 @@ func (impl *memoryUserTokenManagerImpl) RenewToken(ctx context.Context, token st
 	impl.dataCache.Set(token, userInfo, time.Minute)
 
 	status.Code = bizuserinters.StatusCodeOk
+
+	return
+}
+
+func (impl *memoryUserTokenManagerImpl) GenSSOToken(ctx context.Context, parentToken string, expiration time.Duration) (token string, status bizuserinters.Status) {
+	_, status = impl.ExplainToken(ctx, parentToken)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	token = uuid.NewV4().String()
+
+	impl.dataCache.Set(token, parentToken, expiration)
+
+	status.Code = bizuserinters.StatusCodeOk
+
+	return
+}
+
+func (impl *memoryUserTokenManagerImpl) ExplainSSOToken(ctx context.Context, token string) (userInfo *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
+	i, ok := impl.dataCache.Get(token)
+	if !ok {
+		status.Code = bizuserinters.StatusCodeNoDataError
+
+		return
+	}
+
+	parentToken, err := cast.ToStringE(i)
+	if err != nil {
+		status = bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInvalidArgsError, err)
+
+		return
+	}
+
+	userInfo, status = impl.ExplainToken(ctx, parentToken)
 
 	return
 }

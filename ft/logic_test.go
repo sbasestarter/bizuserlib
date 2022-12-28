@@ -17,6 +17,7 @@ import (
 	authenticatormodel "github.com/sbasestarter/bizuserlib/model/authenticator"
 	modelmem "github.com/sbasestarter/bizuserlib/model/authenticator/model"
 	"github.com/sbasestarter/bizuserlib/policy"
+	"github.com/sbasestarter/bizuserlib/sso"
 	tokenmanagermem "github.com/sbasestarter/bizuserlib/tokenmanager"
 	usertokenmanagermem "github.com/sbasestarter/bizuserlib/usertokenmanager"
 	authenticatorlib "github.com/sgostarter/libeasygo/authenticator"
@@ -53,11 +54,13 @@ func Test1(t *testing.T) {
 	dbModel := modelmem.NewMemoryDBModel(tokenManager)
 	userManagerModel := modelmem.NewUserManagerModel(dbModel)
 
+	s := sso.NewCfgSSO([]string{"a.com", "b.com"})
+
 	userManager := bizuserlib.NewUserManager(tokenManager, userTokenManager,
 		userPassGoogle2FARegisterPolicy, userPassGoogle2FALoginPolicy, userPassGoogle2FALoginPolicy, userPassGoogle2FALoginPolicy,
-		userManagerModel, dbModel, nil)
+		userManagerModel, dbModel, s, nil)
 
-	bizID, neededOrAuthenticators, status := userManager.RegisterBegin(ctx)
+	bizID, neededOrAuthenticators, status := userManager.RegisterBegin(ctx, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) > 0)
@@ -101,7 +104,7 @@ func Test1(t *testing.T) {
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 0, len(neededOrAuthenticators))
 
-	userID, token, status := userManager.RegisterEnd(ctx, bizID)
+	userID, token, _, status := userManager.RegisterEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.True(t, len(token) > 0)
 	assert.True(t, userID > 0)
@@ -112,7 +115,7 @@ func Test1(t *testing.T) {
 	assert.EqualValues(t, "user1", users[0].UserName)
 	assert.EqualValues(t, true, users[0].HasGoogle2FA)
 
-	tokenUserInfo, status := userManager.CheckToken(ctx, token)
+	_, tokenUserInfo, status := userManager.CheckToken(ctx, token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
@@ -120,7 +123,7 @@ func Test1(t *testing.T) {
 	//
 	//
 	//
-	bizID, neededOrAuthenticators, status = userManager.LoginBegin(ctx)
+	bizID, neededOrAuthenticators, status = userManager.LoginBegin(ctx, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) > 0)
@@ -153,12 +156,12 @@ func Test1(t *testing.T) {
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 0, len(neededOrAuthenticators))
 
-	userID, token, status = userManager.LoginEnd(ctx, bizID)
+	userID, token, _, status = userManager.LoginEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.True(t, len(token) > 0)
 	assert.True(t, userID > 0)
 
-	tokenUserInfo, status = userManager.CheckToken(ctx, token)
+	_, tokenUserInfo, status = userManager.CheckToken(ctx, token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
@@ -181,11 +184,12 @@ func TestAnonymousAuthenticator(t *testing.T) {
 
 	dbModel := modelmem.NewMemoryDBModel(tokenManager)
 	userManagerModel := modelmem.NewUserManagerModel(dbModel)
+	s := sso.NewCfgSSO([]string{"a.com", "b.com"})
 
 	userManager := bizuserlib.NewUserManager(tokenManager, userTokenManager, anonymousRegisterPolicy, anonymousLoginPolicy,
-		anonymousLoginPolicy, anonymousLoginPolicy, userManagerModel, dbModel, nil)
+		anonymousLoginPolicy, anonymousLoginPolicy, userManagerModel, dbModel, s, nil)
 
-	bizID, neededOrAuthenticators, status := userManager.LoginBegin(ctx)
+	bizID, neededOrAuthenticators, status := userManager.LoginBegin(ctx, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) > 0)
@@ -204,12 +208,12 @@ func TestAnonymousAuthenticator(t *testing.T) {
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 0, len(neededOrAuthenticators))
 
-	userID, token, status := userManager.LoginEnd(ctx, bizID)
+	userID, token, _, status := userManager.LoginEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.True(t, len(token) > 0)
 	assert.True(t, userID > 0)
 
-	tokenUserInfo, status := userManager.CheckToken(ctx, token)
+	_, tokenUserInfo, status := userManager.CheckToken(ctx, token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1x", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
@@ -247,11 +251,13 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 
 	userManagerModel := modelmem.NewUserManagerModel(dbModel)
 
+	s := sso.NewCfgSSO([]string{"a.com", "b.com"})
+
 	userManager := bizuserlib.NewUserManager(tokenManager, userTokenManager,
 		ply, ply, ply, ply,
-		userManagerModel, dbModel, nil)
+		userManagerModel, dbModel, s, nil)
 
-	bizID, neededOrAuthenticators, status := userManager.RegisterBegin(ctx)
+	bizID, neededOrAuthenticators, status := userManager.RegisterBegin(ctx, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) > 0)
@@ -295,7 +301,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 0, len(neededOrAuthenticators))
 
-	userID, token, status := userManager.RegisterEnd(ctx, bizID)
+	userID, token, _, status := userManager.RegisterEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.True(t, len(token) > 0)
 	assert.True(t, userID > 0)
@@ -306,7 +312,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	assert.EqualValues(t, "user1", users[0].UserName)
 	assert.EqualValues(t, true, users[0].HasGoogle2FA)
 
-	tokenUserInfo, status := userManager.CheckToken(ctx, token)
+	_, tokenUserInfo, status := userManager.CheckToken(ctx, token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
@@ -315,7 +321,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	//
 	//
 
-	bizID, neededOrAuthenticators, status = userManager.LoginBegin(ctx)
+	bizID, neededOrAuthenticators, status = userManager.LoginBegin(ctx, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
 	assert.True(t, len(neededOrAuthenticators) > 0)
@@ -348,12 +354,12 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 0, len(neededOrAuthenticators))
 
-	userID, token, status = userManager.LoginEnd(ctx, bizID)
+	userID, token, _, status = userManager.LoginEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.True(t, len(token) > 0)
 	assert.True(t, userID > 0)
 
-	tokenUserInfo, status = userManager.CheckToken(ctx, token)
+	_, tokenUserInfo, status = userManager.CheckToken(ctx, token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)

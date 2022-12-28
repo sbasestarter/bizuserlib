@@ -12,11 +12,12 @@ import (
 
 const (
 	workDataCaredAuthenticatorsKey = "caredAuthenticators"
+	workDataSSOFlagKey             = "ssoFlag"
 )
 
 func NewUserManager(tokenManager bizuserinters.TokenManager, userTokenManager bizuserinters.UserTokenManager,
 	registerPolicy, loginPolicy, changePolicy, deletePolicy Policy, model Model, apiModel usermanager.APIModel,
-	logger l.Wrapper) bizuserinters.UserManager {
+	sso SSO, logger l.Wrapper) bizuserinters.UserManager {
 	if logger == nil {
 		logger = l.NewNopLoggerWrapper()
 	}
@@ -69,6 +70,12 @@ func NewUserManager(tokenManager bizuserinters.TokenManager, userTokenManager bi
 		return nil
 	}
 
+	if sso == nil {
+		logger.Error("no sso")
+
+		return nil
+	}
+
 	return &userManagerImpl{
 		logger:           logger.WithFields(l.StringField(l.ClsKey, "userManagerImpl")),
 		tokenManager:     tokenManager,
@@ -79,6 +86,7 @@ func NewUserManager(tokenManager bizuserinters.TokenManager, userTokenManager bi
 		deletePolicy:     deletePolicy,
 		model:            model,
 		apiModel:         apiModel,
+		sso:              sso,
 	}
 }
 
@@ -92,13 +100,14 @@ type userManagerImpl struct {
 	deletePolicy     Policy
 	model            Model
 	apiModel         usermanager.APIModel
+	sso              SSO
 }
 
-func (impl *userManagerImpl) RegisterBegin(ctx context.Context) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+func (impl *userManagerImpl) RegisterBegin(ctx context.Context, ssoJumpURL string) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
 	return impl.xBegin(ctx, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUser,
 		Event:         bizuserinters.SetupEvent,
-	}, nil)
+	}, nil, ssoJumpURL)
 }
 
 func (impl *userManagerImpl) RegisterCheck(ctx context.Context, bizID string) (neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
@@ -108,7 +117,8 @@ func (impl *userManagerImpl) RegisterCheck(ctx context.Context, bizID string) (n
 	}, false)
 }
 
-func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (userID uint64, token string, status bizuserinters.Status) {
+func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (userID uint64, token, ssoToken string,
+	status bizuserinters.Status) {
 	defer impl.tokenManager.DeleteToken(bizID)
 
 	_, status = impl.xCheck(ctx, bizID, bizuserinters.AuthenticatorEvent{
@@ -138,14 +148,19 @@ func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (use
 		return
 	}
 
+	d, _ := impl.tokenManager.GetWorkData(ctx, bizID, workDataSSOFlagKey)
+	if len(d) > 0 {
+		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token, time.Minute)
+	}
+
 	return
 }
 
-func (impl *userManagerImpl) LoginBegin(ctx context.Context) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
+func (impl *userManagerImpl) LoginBegin(ctx context.Context, ssoJumpURL string) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
 	return impl.xBegin(ctx, bizuserinters.AuthenticatorEvent{
 		Authenticator: bizuserinters.AuthenticatorUser,
 		Event:         bizuserinters.VerifyEvent,
-	}, nil)
+	}, nil, ssoJumpURL)
 }
 
 func (impl *userManagerImpl) LoginCheck(ctx context.Context, bizID string) (neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
@@ -155,7 +170,8 @@ func (impl *userManagerImpl) LoginCheck(ctx context.Context, bizID string) (need
 	}, false)
 }
 
-func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID uint64, token string, status bizuserinters.Status) {
+func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID uint64, token, ssoToken string,
+	status bizuserinters.Status) {
 	defer impl.tokenManager.DeleteToken(bizID)
 
 	_, status = impl.xCheck(ctx, bizID, bizuserinters.AuthenticatorEvent{
@@ -182,6 +198,14 @@ func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID
 		UserName: userInfo.UserName,
 		Age:      time.Hour * 24 * 7,
 	})
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	d, _ := impl.tokenManager.GetWorkData(ctx, bizID, workDataSSOFlagKey)
+	if len(d) > 0 {
+		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token, time.Minute)
+	}
 
 	return
 }
@@ -195,7 +219,7 @@ func (impl *userManagerImpl) ChangeBegin(ctx context.Context, token string, auth
 
 	return impl.xBeginEx(ctx, bizuserinters.AuthenticatorEvent{
 		Event: bizuserinters.ChangeEvent,
-	}, authenticators, func(bizID string) bizuserinters.Status {
+	}, authenticators, "", func(bizID string) bizuserinters.Status {
 		return impl.tokenManager.SetCurrentUserInfo(ctx, bizID, &bizuserinters.UserIdentity{
 			ID:       userTokenInfo.ID,
 			UserName: userTokenInfo.UserName,
@@ -239,7 +263,7 @@ func (impl *userManagerImpl) DeleteBegin(ctx context.Context, token string, auth
 
 	return impl.xBeginEx(ctx, bizuserinters.AuthenticatorEvent{
 		Event: bizuserinters.DeleteEvent,
-	}, authenticators, func(bizID string) bizuserinters.Status {
+	}, authenticators, "", func(bizID string) bizuserinters.Status {
 		return impl.tokenManager.SetCurrentUserInfo(ctx, bizID, &bizuserinters.UserIdentity{
 			ID:       userTokenInfo.ID,
 			UserName: userTokenInfo.UserName,
@@ -292,8 +316,24 @@ func (impl *userManagerImpl) ListUsers(ctx context.Context, token string) (users
 	return impl.apiModel.ListUsers(ctx)
 }
 
-func (impl *userManagerImpl) CheckToken(ctx context.Context, token string) (info *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
-	return impl.userTokenManager.ExplainToken(ctx, token)
+func (impl *userManagerImpl) CheckToken(ctx context.Context, token string, ssoJumpURL string) (ssoToken string,
+	info *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
+	info, status = impl.userTokenManager.ExplainToken(ctx, token)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	if ssoJumpURL != "" {
+		if !impl.sso.CheckJumpURL(ssoJumpURL) {
+			status.Code = bizuserinters.StatusCodeInvalidArgsError
+
+			return
+		}
+
+		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token, time.Minute)
+	}
+
+	return
 }
 
 func (impl *userManagerImpl) RenewToken(ctx context.Context, token string) (newToken string, info *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
@@ -302,6 +342,22 @@ func (impl *userManagerImpl) RenewToken(ctx context.Context, token string) (newT
 
 func (impl *userManagerImpl) Logout(ctx context.Context, token string) bizuserinters.Status {
 	return impl.userTokenManager.DeleteToken(ctx, token)
+}
+
+func (impl *userManagerImpl) SSOLogin(ctx context.Context, ssoToken string) (userID uint64,
+	token string, status bizuserinters.Status) {
+	userTokenInfo, status := impl.userTokenManager.ExplainSSOToken(ctx, ssoToken)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
+		ID:       userID,
+		UserName: userTokenInfo.UserName,
+		Age:      time.Hour * 24 * 7,
+	})
+
+	return
 }
 
 //
@@ -326,13 +382,13 @@ func (impl *userManagerImpl) getPolicyByPurpose(purpose bizuserinters.Event) Pol
 }
 
 func (impl *userManagerImpl) xBegin(ctx context.Context, purpose bizuserinters.AuthenticatorEvent,
-	authenticators []bizuserinters.AuthenticatorIdentity) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent,
+	authenticators []bizuserinters.AuthenticatorIdentity, ssoJumpURL string) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent,
 	status bizuserinters.Status) {
-	return impl.xBeginEx(ctx, purpose, authenticators, nil)
+	return impl.xBeginEx(ctx, purpose, authenticators, ssoJumpURL, nil)
 }
 
 func (impl *userManagerImpl) xBeginEx(ctx context.Context, purpose bizuserinters.AuthenticatorEvent,
-	authenticators []bizuserinters.AuthenticatorIdentity, newTokenCreatedCB func(bizID string) bizuserinters.Status) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent,
+	authenticators []bizuserinters.AuthenticatorIdentity, ssoJumpURL string, newTokenCreatedCB func(bizID string) bizuserinters.Status) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent,
 	status bizuserinters.Status) {
 	defer func() {
 		if status.Code != bizuserinters.StatusCodeOk && status.Code != bizuserinters.StatusCodeNeedAuthenticator {
@@ -361,6 +417,19 @@ func (impl *userManagerImpl) xBeginEx(ctx context.Context, purpose bizuserinters
 		}
 
 		purpose.Authenticator = authenticators[0]
+	}
+
+	if ssoJumpURL != "" {
+		if !impl.sso.CheckJumpURL(ssoJumpURL) {
+			status.Code = bizuserinters.StatusCodeInvalidArgsError
+
+			return
+		}
+
+		status = impl.tokenManager.SetWorkData(ctx, bizID, workDataSSOFlagKey, []byte(ssoJumpURL))
+		if status.Code != bizuserinters.StatusCodeOk {
+			return
+		}
 	}
 
 	if newTokenCreatedCB != nil {
