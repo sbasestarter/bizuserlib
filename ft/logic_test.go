@@ -106,19 +106,19 @@ func Test1(t *testing.T) {
 
 	userID, token, _, status := userManager.RegisterEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-	assert.True(t, len(token) > 0)
+	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	users, status := userManager.ListUsers(ctx, token)
+	users, status := userManager.ListUsers(ctx, token.Token)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 1, len(users))
 	assert.EqualValues(t, "user1", users[0].UserName)
 	assert.EqualValues(t, true, users[0].HasGoogle2FA)
 
-	_, tokenUserInfo, status := userManager.CheckToken(ctx, token, "")
+	_, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
-	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
+	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
 
 	//
 	//
@@ -158,13 +158,13 @@ func Test1(t *testing.T) {
 
 	userID, token, _, status = userManager.LoginEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-	assert.True(t, len(token) > 0)
+	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	_, tokenUserInfo, status = userManager.CheckToken(ctx, token, "")
+	_, tokenUserInfo, status = userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
-	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
+	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
 }
 
 func TestAnonymousAuthenticator(t *testing.T) {
@@ -210,13 +210,13 @@ func TestAnonymousAuthenticator(t *testing.T) {
 
 	userID, token, _, status := userManager.LoginEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-	assert.True(t, len(token) > 0)
+	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	_, tokenUserInfo, status := userManager.CheckToken(ctx, token, "")
+	_, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1x", tokenUserInfo.UserName)
-	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
+	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
 }
 
 func TestConditionPolicy(t *testing.T) {
@@ -303,19 +303,19 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 
 	userID, token, _, status := userManager.RegisterEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-	assert.True(t, len(token) > 0)
+	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	users, status := userManager.ListUsers(ctx, token)
+	users, status := userManager.ListUsers(ctx, token.Token)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, 1, len(users))
 	assert.EqualValues(t, "user1", users[0].UserName)
 	assert.EqualValues(t, true, users[0].HasGoogle2FA)
 
-	_, tokenUserInfo, status := userManager.CheckToken(ctx, token, "")
+	_, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
-	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
+	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
 
 	//
 	//
@@ -356,19 +356,19 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 
 	userID, token, _, status = userManager.LoginEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
-	assert.True(t, len(token) > 0)
+	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	_, tokenUserInfo, status = userManager.CheckToken(ctx, token, "")
+	_, tokenUserInfo, status = userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
-	t.Log(tokenUserInfo.ID, tokenUserInfo.Age)
+	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
 
 	//
 	//
 	//
 
-	bizID, neededOrAuthenticators, status = userManager.ChangeBegin(ctx, token,
+	bizID, neededOrAuthenticators, status = userManager.ChangeBegin(ctx, token.Token,
 		[]bizuserinters.AuthenticatorIdentity{bizuserinters.AuthenticatorUserPassPass})
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
@@ -410,7 +410,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	//
 	//
 
-	bizID, neededOrAuthenticators, status = userManager.ChangeBegin(ctx, token,
+	bizID, neededOrAuthenticators, status = userManager.ChangeBegin(ctx, token.Token,
 		[]bizuserinters.AuthenticatorIdentity{bizuserinters.AuthenticatorGoogle2FA})
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
@@ -459,7 +459,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	//
 	//
 
-	bizID, neededOrAuthenticators, status = userManager.ChangeBegin(ctx, token,
+	bizID, neededOrAuthenticators, status = userManager.ChangeBegin(ctx, token.Token,
 		[]bizuserinters.AuthenticatorIdentity{bizuserinters.AuthenticatorGoogle2FA})
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)
@@ -504,7 +504,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	status = userManager.ChangeEnd(ctx, bizID)
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 
-	bizID, neededOrAuthenticators, status = userManager.DeleteBegin(ctx, token,
+	bizID, neededOrAuthenticators, status = userManager.DeleteBegin(ctx, token.Token,
 		[]bizuserinters.AuthenticatorIdentity{bizuserinters.AuthenticatorGoogle2FA})
 	assert.EqualValues(t, bizuserinters.StatusCodeNeedAuthenticator, status.Code)
 	assert.True(t, len(bizID) > 0)

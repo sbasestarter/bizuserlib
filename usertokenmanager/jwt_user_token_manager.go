@@ -182,14 +182,14 @@ func (impl *jwtUserTokenManagerImpl) ExplainSSOToken(ctx context.Context, token 
 func (impl *jwtUserTokenManagerImpl) generateToken(userInfo *bizuserinters.UserTokenInfo) (token string, err error) {
 	userInfo.StartAt = time.Now()
 
-	if userInfo.Age <= 0 {
-		userInfo.Age = defaultTokenExpiration
+	if userInfo.Expiration <= 0 {
+		userInfo.Expiration = defaultTokenExpiration
 	}
 
 	token, err = jwt.NewWithClaims(jwt.SigningMethodHS256, UserClaims{
 		UserTokenInfo: *userInfo,
 		StandardClaims: jwt.StandardClaims{
-			ExpiresAt: time.Now().Add(userInfo.Age).Unix(),
+			ExpiresAt: time.Now().Add(userInfo.Expiration).Unix(),
 		},
 	}).SignedString(impl.tokenSecKey)
 

@@ -6,10 +6,10 @@ import (
 )
 
 type UserTokenInfo struct {
-	ID       uint64
-	UserName string
-	StartAt  time.Time
-	Age      time.Duration
+	ID         uint64
+	UserName   string
+	StartAt    time.Time
+	Expiration time.Duration
 }
 
 type UserTokenManager interface {

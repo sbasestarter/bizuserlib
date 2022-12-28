@@ -27,11 +27,11 @@ func (impl *memoryUserTokenManagerImpl) GenToken(_ context.Context, ui *bizuseri
 
 	userInfo.StartAt = time.Now()
 
-	if userInfo.Age <= 0 {
-		userInfo.Age = cache.NoExpiration
+	if userInfo.Expiration <= 0 {
+		userInfo.Expiration = cache.NoExpiration
 	}
 
-	impl.dataCache.Set(token, &userInfo, userInfo.Age)
+	impl.dataCache.Set(token, &userInfo, userInfo.Expiration)
 
 	status.Code = bizuserinters.StatusCodeOk
 
@@ -79,7 +79,7 @@ func (impl *memoryUserTokenManagerImpl) RenewToken(ctx context.Context, token st
 
 	userInfo.StartAt = time.Now()
 
-	impl.dataCache.Set(newToken, userInfo, userInfo.Age)
+	impl.dataCache.Set(newToken, userInfo, userInfo.Expiration)
 	impl.dataCache.Set(token, userInfo, time.Minute)
 
 	status.Code = bizuserinters.StatusCodeOk

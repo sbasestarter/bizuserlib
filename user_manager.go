@@ -77,30 +77,32 @@ func NewUserManager(tokenManager bizuserinters.TokenManager, userTokenManager bi
 	}
 
 	return &userManagerImpl{
-		logger:           logger.WithFields(l.StringField(l.ClsKey, "userManagerImpl")),
-		tokenManager:     tokenManager,
-		userTokenManager: userTokenManager,
-		registerPolicy:   registerPolicy,
-		loginPolicy:      loginPolicy,
-		changePolicy:     changePolicy,
-		deletePolicy:     deletePolicy,
-		model:            model,
-		apiModel:         apiModel,
-		sso:              sso,
+		logger:                 logger.WithFields(l.StringField(l.ClsKey, "userManagerImpl")),
+		tokenManager:           tokenManager,
+		userTokenManager:       userTokenManager,
+		registerPolicy:         registerPolicy,
+		loginPolicy:            loginPolicy,
+		changePolicy:           changePolicy,
+		deletePolicy:           deletePolicy,
+		model:                  model,
+		apiModel:               apiModel,
+		sso:                    sso,
+		defaultTokenExpiration: time.Hour * 24 * 7,
 	}
 }
 
 type userManagerImpl struct {
-	logger           l.Wrapper
-	tokenManager     bizuserinters.TokenManager
-	userTokenManager bizuserinters.UserTokenManager
-	registerPolicy   Policy
-	loginPolicy      Policy
-	changePolicy     Policy
-	deletePolicy     Policy
-	model            Model
-	apiModel         usermanager.APIModel
-	sso              SSO
+	logger                 l.Wrapper
+	tokenManager           bizuserinters.TokenManager
+	userTokenManager       bizuserinters.UserTokenManager
+	registerPolicy         Policy
+	loginPolicy            Policy
+	changePolicy           Policy
+	deletePolicy           Policy
+	model                  Model
+	apiModel               usermanager.APIModel
+	sso                    SSO
+	defaultTokenExpiration time.Duration
 }
 
 func (impl *userManagerImpl) RegisterBegin(ctx context.Context, ssoJumpURL string) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
@@ -117,8 +119,8 @@ func (impl *userManagerImpl) RegisterCheck(ctx context.Context, bizID string) (n
 	}, false)
 }
 
-func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (userID uint64, token, ssoToken string,
-	status bizuserinters.Status) {
+func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (userID uint64,
+	token bizuserinters.TokenInfo, ssoToken string, status bizuserinters.Status) {
 	defer impl.tokenManager.DeleteToken(bizID)
 
 	_, status = impl.xCheck(ctx, bizID, bizuserinters.AuthenticatorEvent{
@@ -139,18 +141,21 @@ func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (use
 
 	userID = userInfo.ID
 
-	token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
-		ID:       userInfo.ID,
-		UserName: userInfo.UserName,
-		Age:      time.Hour * 24 * 7,
+	token.Expiration = impl.defaultTokenExpiration
+
+	token.Token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
+		ID:         userInfo.ID,
+		UserName:   userInfo.UserName,
+		Expiration: token.Expiration,
 	})
+
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
 	}
 
 	d, _ := impl.tokenManager.GetWorkData(ctx, bizID, workDataSSOFlagKey)
 	if len(d) > 0 {
-		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token, time.Minute)
+		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token.Token, time.Minute)
 	}
 
 	return
@@ -170,8 +175,8 @@ func (impl *userManagerImpl) LoginCheck(ctx context.Context, bizID string) (need
 	}, false)
 }
 
-func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID uint64, token, ssoToken string,
-	status bizuserinters.Status) {
+func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID uint64, token bizuserinters.
+	TokenInfo, ssoToken string, status bizuserinters.Status) {
 	defer impl.tokenManager.DeleteToken(bizID)
 
 	_, status = impl.xCheck(ctx, bizID, bizuserinters.AuthenticatorEvent{
@@ -193,18 +198,21 @@ func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID
 
 	userID = userInfo.ID
 
-	token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
-		ID:       userID,
-		UserName: userInfo.UserName,
-		Age:      time.Hour * 24 * 7,
+	token.Expiration = impl.defaultTokenExpiration
+
+	token.Token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
+		ID:         userID,
+		UserName:   userInfo.UserName,
+		Expiration: token.Expiration,
 	})
+
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
 	}
 
 	d, _ := impl.tokenManager.GetWorkData(ctx, bizID, workDataSSOFlagKey)
 	if len(d) > 0 {
-		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token, time.Minute)
+		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token.Token, time.Minute)
 	}
 
 	return
@@ -336,8 +344,17 @@ func (impl *userManagerImpl) CheckToken(ctx context.Context, token string, ssoJu
 	return
 }
 
-func (impl *userManagerImpl) RenewToken(ctx context.Context, token string) (newToken string, info *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
-	return impl.userTokenManager.RenewToken(ctx, token)
+func (impl *userManagerImpl) RenewToken(ctx context.Context, token string) (
+	newToken bizuserinters.TokenInfo, info *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
+	newTokenStr, info, status := impl.userTokenManager.RenewToken(ctx, token)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	newToken.Token = newTokenStr
+	newToken.Expiration = info.Expiration
+
+	return
 }
 
 func (impl *userManagerImpl) Logout(ctx context.Context, token string) bizuserinters.Status {
@@ -345,16 +362,17 @@ func (impl *userManagerImpl) Logout(ctx context.Context, token string) bizuserin
 }
 
 func (impl *userManagerImpl) SSOLogin(ctx context.Context, ssoToken string) (userID uint64,
-	token string, status bizuserinters.Status) {
+	token bizuserinters.TokenInfo, status bizuserinters.Status) {
 	userTokenInfo, status := impl.userTokenManager.ExplainSSOToken(ctx, ssoToken)
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
 	}
 
-	token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
-		ID:       userID,
-		UserName: userTokenInfo.UserName,
-		Age:      time.Hour * 24 * 7,
+	token.Expiration = impl.defaultTokenExpiration
+	token.Token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
+		ID:         userID,
+		UserName:   userTokenInfo.UserName,
+		Expiration: token.Expiration,
 	})
 
 	return
