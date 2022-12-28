@@ -73,7 +73,7 @@ func (impl *jwtUserTokenManagerImpl) DeleteToken(ctx context.Context, token stri
 		return bizuserinters.MakeStatusByError(bizuserinters.StatusCodeInvalidArgsError, err)
 	}
 
-	extendDuration := time.Duration(expireAt - time.Now().Unix())
+	extendDuration := time.Duration(expireAt-time.Now().Unix()) * time.Second
 	if extendDuration <= 0 {
 		extendDuration = time.Second
 	}
