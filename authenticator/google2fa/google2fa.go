@@ -15,6 +15,15 @@ type Authenticator interface {
 }
 
 func NewAuthenticator(model Model, issuer string) Authenticator {
+	return NewAuthenticatorEx(model, issuer, nil)
+}
+
+type DebugConfig struct {
+	FakeQrURL     string
+	FakeSecretKey string
+}
+
+func NewAuthenticatorEx(model Model, issuer string, dc *DebugConfig) Authenticator {
 	if model == nil {
 		return nil
 	}
@@ -22,12 +31,14 @@ func NewAuthenticator(model Model, issuer string) Authenticator {
 	return &authenticatorImpl{
 		model:  model,
 		issuer: issuer,
+		dc:     dc,
 	}
 }
 
 type authenticatorImpl struct {
 	model  Model
 	issuer string
+	dc     *DebugConfig
 }
 
 //
@@ -49,8 +60,13 @@ func (impl *authenticatorImpl) GetSetupInfo(ctx context.Context, bizID string) (
 		return
 	}
 
-	secretKey = authenticatorlib.GetSecret()
-	qrCode = authenticatorlib.CreateGoogleAuthQRCodeData(secretKey, id, impl.issuer)
+	if impl.dc != nil && impl.dc.FakeQrURL != "" {
+		secretKey = impl.dc.FakeSecretKey
+		qrCode = impl.dc.FakeQrURL
+	} else {
+		secretKey = authenticatorlib.GetSecret()
+		qrCode = authenticatorlib.CreateGoogleAuthQRCodeData(secretKey, id, impl.issuer)
+	}
 
 	status = impl.model.CacheGoogle2FASecretKey(ctx, bizID, secretKey)
 
