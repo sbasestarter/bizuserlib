@@ -223,7 +223,7 @@ func (impl *jwtUserTokenManagerImpl) parseToken(token string) (userInfo *bizuser
 }
 
 func (impl *jwtUserTokenManagerImpl) parseSSOToken(token string) (parentToken string, err error) {
-	var claims UserClaims
+	var claims SSOClaims
 
 	tokenObj, err := jwt.ParseWithClaims(token, &claims, func(token *jwt.Token) (interface{}, error) {
 		return impl.tokenSecKey, nil
