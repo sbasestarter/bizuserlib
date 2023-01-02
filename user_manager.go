@@ -368,6 +368,7 @@ func (impl *userManagerImpl) SSOLogin(ctx context.Context, ssoToken string) (use
 		return
 	}
 
+	userID = userTokenInfo.ID
 	token.Expiration = impl.defaultTokenExpiration
 	token.Token, status = impl.userTokenManager.GenToken(ctx, &bizuserinters.UserTokenInfo{
 		ID:         userID,
