@@ -10,6 +10,7 @@ type UserInfo struct {
 	UserName     string
 	HasGoogle2FA bool
 	Admin        bool
+	Origin       string
 }
 
 type TokenInfo struct {

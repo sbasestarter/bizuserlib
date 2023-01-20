@@ -18,6 +18,13 @@ const (
 func NewUserManager(tokenManager bizuserinters.TokenManager, userTokenManager bizuserinters.UserTokenManager,
 	registerPolicy, loginPolicy, changePolicy, deletePolicy Policy, model Model, apiModel usermanager.APIModel,
 	sso SSO, logger l.Wrapper) bizuserinters.UserManager {
+	return NewUserManagerEx(tokenManager, userTokenManager, registerPolicy, loginPolicy, changePolicy, deletePolicy,
+		model, apiModel, sso, "", logger)
+}
+
+func NewUserManagerEx(tokenManager bizuserinters.TokenManager, userTokenManager bizuserinters.UserTokenManager,
+	registerPolicy, loginPolicy, changePolicy, deletePolicy Policy, model Model, apiModel usermanager.APIModel,
+	sso SSO, origin string, logger l.Wrapper) bizuserinters.UserManager {
 	if logger == nil {
 		logger = l.NewNopLoggerWrapper()
 	}
@@ -88,6 +95,7 @@ func NewUserManager(tokenManager bizuserinters.TokenManager, userTokenManager bi
 		apiModel:               apiModel,
 		sso:                    sso,
 		defaultTokenExpiration: time.Hour * 24 * 7,
+		origin:                 origin,
 	}
 }
 
@@ -103,6 +111,7 @@ type userManagerImpl struct {
 	apiModel               usermanager.APIModel
 	sso                    SSO
 	defaultTokenExpiration time.Duration
+	origin                 string
 }
 
 func (impl *userManagerImpl) RegisterBegin(ctx context.Context, ssoJumpURL string) (bizID string, neededOrEvent []bizuserinters.AuthenticatorEvent, status bizuserinters.Status) {
@@ -321,7 +330,16 @@ func (impl *userManagerImpl) ListUsers(ctx context.Context, token string) (users
 		return
 	}
 
-	return impl.apiModel.ListUsers(ctx)
+	users, status = impl.apiModel.ListUsers(ctx)
+	if status.Code != bizuserinters.StatusCodeOk {
+		return
+	}
+
+	for idx := 0; idx < len(users); idx++ {
+		users[idx].Origin = impl.origin
+	}
+
+	return
 }
 
 func (impl *userManagerImpl) CheckToken(ctx context.Context, token string, ssoJumpURL string) (ssoToken string,
