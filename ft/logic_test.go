@@ -115,7 +115,7 @@ func Test1(t *testing.T) {
 	assert.EqualValues(t, "user1", users[0].UserName)
 	assert.EqualValues(t, true, users[0].HasGoogle2FA)
 
-	_, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
+	_, _, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
@@ -161,7 +161,7 @@ func Test1(t *testing.T) {
 	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	_, tokenUserInfo, status = userManager.CheckToken(ctx, token.Token, "")
+	_, _, tokenUserInfo, status = userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
@@ -213,7 +213,7 @@ func TestAnonymousAuthenticator(t *testing.T) {
 	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	_, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
+	_, _, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1x", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
@@ -312,7 +312,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	assert.EqualValues(t, "user1", users[0].UserName)
 	assert.EqualValues(t, true, users[0].HasGoogle2FA)
 
-	_, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
+	_, _, tokenUserInfo, status := userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)
@@ -359,7 +359,7 @@ func conditionPolicyEx(t *testing.T, tokenManager bizuserinters.TokenManagerAll,
 	assert.True(t, len(token.Token) > 0)
 	assert.True(t, userID > 0)
 
-	_, tokenUserInfo, status = userManager.CheckToken(ctx, token.Token, "")
+	_, _, tokenUserInfo, status = userManager.CheckToken(ctx, token.Token, "")
 	assert.EqualValues(t, bizuserinters.StatusCodeOk, status.Code)
 	assert.EqualValues(t, "user1", tokenUserInfo.UserName)
 	t.Log(tokenUserInfo.ID, tokenUserInfo.Expiration)

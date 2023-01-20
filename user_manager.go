@@ -158,6 +158,8 @@ func (impl *userManagerImpl) RegisterEnd(ctx context.Context, bizID string) (use
 		Expiration: token.Expiration,
 	})
 
+	token.Origin = impl.origin
+
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
 	}
@@ -214,6 +216,8 @@ func (impl *userManagerImpl) LoginEnd(ctx context.Context, bizID string) (userID
 		UserName:   userInfo.UserName,
 		Expiration: token.Expiration,
 	})
+
+	token.Origin = impl.origin
 
 	if status.Code != bizuserinters.StatusCodeOk {
 		return
@@ -342,7 +346,7 @@ func (impl *userManagerImpl) ListUsers(ctx context.Context, token string) (users
 	return
 }
 
-func (impl *userManagerImpl) CheckToken(ctx context.Context, token string, ssoJumpURL string) (ssoToken string,
+func (impl *userManagerImpl) CheckToken(ctx context.Context, token string, ssoJumpURL string) (ssoToken, origin string,
 	info *bizuserinters.UserTokenInfo, status bizuserinters.Status) {
 	info, status = impl.userTokenManager.ExplainToken(ctx, token)
 	if status.Code != bizuserinters.StatusCodeOk {
@@ -359,6 +363,8 @@ func (impl *userManagerImpl) CheckToken(ctx context.Context, token string, ssoJu
 		ssoToken, _ = impl.userTokenManager.GenSSOToken(ctx, token, time.Minute)
 	}
 
+	origin = impl.origin
+
 	return
 }
 
@@ -371,6 +377,7 @@ func (impl *userManagerImpl) RenewToken(ctx context.Context, token string) (
 
 	newToken.Token = newTokenStr
 	newToken.Expiration = info.Expiration
+	newToken.Origin = impl.origin
 
 	return
 }
@@ -393,6 +400,7 @@ func (impl *userManagerImpl) SSOLogin(ctx context.Context, ssoToken string) (use
 		UserName:   userTokenInfo.UserName,
 		Expiration: token.Expiration,
 	})
+	token.Origin = impl.origin
 
 	return
 }

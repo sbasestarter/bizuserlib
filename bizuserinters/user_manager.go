@@ -16,6 +16,7 @@ type UserInfo struct {
 type TokenInfo struct {
 	Token      string
 	Expiration time.Duration
+	Origin     string
 }
 
 type UserManager interface {
@@ -37,7 +38,7 @@ type UserManager interface {
 	DeleteEnd(ctx context.Context, bizID string) (status Status)
 
 	ListUsers(ctx context.Context, token string) (users []*UserInfo, status Status)
-	CheckToken(ctx context.Context, token string, ssoJumpURL string) (ssoToken string, info *UserTokenInfo, status Status)
+	CheckToken(ctx context.Context, token string, ssoJumpURL string) (ssoToken, origin string, info *UserTokenInfo, status Status)
 	RenewToken(ctx context.Context, token string) (newToken TokenInfo, info *UserTokenInfo, status Status)
 	Logout(ctx context.Context, token string) Status
 
